@@ -13,7 +13,7 @@
 
 #include "gradient.h"
 
-const int ALPHA = 128;
+const int ALPHA = 64;
 
 void *pngPointer = NULL;
 gdImagePtr im;
@@ -64,7 +64,6 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
   // The first color added is the background, it should be the quality 0 color
   for(int i = 0; i < GRADIENT_MAP_SIZE; i++) {
     colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[i][0], GRADIENT_MAP[i][1], GRADIENT_MAP[i][2], ALPHA);
-    // printf("Color: %d, Red: %d, Green: %d, Blue: %d, Alpha: %d\n", colors[i], GRADIENT_MAP[i][0], GRADIENT_MAP[i][1], GRADIENT_MAP[i][2], ALPHA);
   }
 
   fflush(stdout);
