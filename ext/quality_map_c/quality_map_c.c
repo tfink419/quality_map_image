@@ -14,41 +14,109 @@
 void *pngPointer = NULL;
 gdImagePtr im;
 
-static VALUE buildImage(VALUE self) {
+void checkPointArray(VALUE point) {
+  const char* pointError =
+    "Points have format: [[p1_lat, p1_long, p1_quality], [p2_lat, p2_long, p2_quality], ...]";
+
+  Check_Type(point, T_ARRAY);
+
+  if(RARRAY_LEN(point) != 3) {
+    rb_raise(rb_eArgError, "%s", pointError);
+  }
+}
+
+static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRuby, VALUE stepIntRuby, VALUE pointsRuby) {
   /* Declare the image */
   /* Declare output files */
   /* Declare color indexes */
-  int black;
-  int white;
 
-  /* Allocate the image: 64 pixels across by 64 pixels tall */
-  im = gdImageCreate(64, 64);
+  const char* coordError =
+    "Coordinates have format: [lat(int), long(int)]";
 
-  /* Allocate the color black (red, green and blue all minimum).
-    Since this is the first color in a new image, it will
-    be the background color. */
-  black = gdImageColorAllocate(im, 0, 0, 0);
+  Check_Type(southWestIntRuby, T_ARRAY);
+  if(RARRAY_LEN(southWestIntRuby) != 2) {
+    rb_raise(rb_eArgError, "%s", coordError);
+  }
+  Check_Type(northEastIntRuby, T_ARRAY);
+  if(RARRAY_LEN(northEastIntRuby) != 2) {
+    rb_raise(rb_eArgError, "%s", coordError);
+  }
+  Check_Type(pointsRuby, T_ARRAY);
 
-  /* Allocate the color white (red, green and blue all maximum). */
-  white = gdImageColorAllocate(im, 255, 255, 255);
 
-  /* Draw a line from the upper left to the lower right,
-    using white color index. */
-  gdImageLine(im, 0, 0, 63, 63, white);
+  int south = NUM2INT(rb_ary_entry(southWestIntRuby, 0));
+  int west = NUM2INT(rb_ary_entry(southWestIntRuby, 1));
+  int north = NUM2INT(rb_ary_entry(northEastIntRuby, 0));
+  int east = NUM2INT(rb_ary_entry(northEastIntRuby, 1));
+  int stepInt = NUM2INT(stepIntRuby);
 
-  int imageSize;
+  int width = ((east-west)/stepInt)+1;
+  int height = ((north-south)/stepInt)+1;
 
-  /* Output the image to the disk file in PNG format. */
+  im = gdImageCreate(width, height);
+
+  int red = gdImageColorAllocateAlpha(im, 255, 0, 0, 128);
+  int green = gdImageColorAllocateAlpha(im, 0, 255, 0, 128);
+
+  unsigned int gstoreInd = 0;
+
+  VALUE point;
+  short currentPointExists = (RARRAY_LEN(pointsRuby) > 0);
+  int currentPointLat, currentPointLong;
+  double currentPointQuality;
+  if(currentPointExists) {
+    point = rb_ary_entry(pointsRuby, 0);
+    checkPointArray(point);
+    currentPointLat = NUM2INT(rb_ary_entry(point, 0));
+    currentPointLong = NUM2INT(rb_ary_entry(point, 1));
+    currentPointQuality = NUM2DBL(rb_ary_entry(point, 2));
+  }
+  // Iterate through coordinates, changing each pixel at that coordinate based on the point(s) there
+  for(int lat = south, y = height-1; lat <= north; lat += stepInt, y--) {
+    for(int lng = west, x = 0; lng <= east; lng += stepInt, x++) {
+      double quality = 0;
+      if(currentPointExists && currentPointLat == lat && currentPointLong == lng) {
+        quality = currentPointQuality;
+        if(++gstoreInd < RARRAY_LEN(pointsRuby)) {
+          point = rb_ary_entry(pointsRuby, gstoreInd);
+          checkPointArray(point);
+
+          currentPointLat = NUM2INT(rb_ary_entry(point, 0));
+          currentPointLong = NUM2INT(rb_ary_entry(point, 1));
+          currentPointQuality = NUM2DBL(rb_ary_entry(point, 2));
+        }
+        else {
+          currentPointExists = 0; // false
+        }
+      }
+      if(quality > 12.5) {
+        quality = 12.5;
+      }
+      if(quality < 0) {
+        quality = 0;
+      }
+      if(quality > 0) {
+        gdImageSetPixel(im, x, y, green);
+      }
+    }
+  }
+
+  int imageSize = 1;
+
+  /* Generate a blob of the image */
   pngPointer = gdImagePngPtr(im, &imageSize);
 
-  gdFree(pngPointer);
+  if(pngPointer) {
+    printf("imageSize: %d\n", imageSize);
+    fflush(stdout);
 
-  // VALUE returnValues[1];
-  // returnValues[0] = INT2NUM(imageSize);
-  // returnValues[1] = pngPointer;
-
-  // return rb_ary_new_from_values(1, returnValues);
-  return rb_str_new(pngPointer, imageSize);
+    return rb_str_new(pngPointer, imageSize);
+  }
+  else {
+    printf("Damn thing failed...\n");
+    fflush(stdout);
+    return Qnil;
+  }
 }
 
 static VALUE destroyImage(VALUE self) {
@@ -61,6 +129,6 @@ void Init_quality_map_c(void) {
   VALUE QualityMapC = rb_define_module("QualityMapC");
   VALUE Image = rb_define_class_under(QualityMapC, "Image", rb_cObject);
 
-  rb_define_singleton_method(Image, "buildImage", buildImage, 0);
+  rb_define_singleton_method(Image, "buildImage", buildImage, 4);
   rb_define_singleton_method(Image, "destroyImage", destroyImage, 0);
 }
