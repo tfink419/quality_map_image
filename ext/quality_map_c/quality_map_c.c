@@ -11,6 +11,10 @@
 #include "ruby/ruby.h"
 #include "ruby/encoding.h"
 
+#include "gradient.h"
+
+const int ALPHA = 128;
+
 void *pngPointer = NULL;
 gdImagePtr im;
 
@@ -55,8 +59,15 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
 
   im = gdImageCreate(width, height);
 
-  int red = gdImageColorAllocateAlpha(im, 255, 0, 0, 128);
-  int green = gdImageColorAllocateAlpha(im, 0, 255, 0, 128);
+  int* colors = malloc(GRADIENT_MAP_SIZE * sizeof(int));
+
+  // The first color added is the background, it should be the quality 0 color
+  for(int i = 0; i < GRADIENT_MAP_SIZE; i++) {
+    colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[i][0], GRADIENT_MAP[i][1], GRADIENT_MAP[i][2], ALPHA);
+    // printf("Color: %d, Red: %d, Green: %d, Blue: %d, Alpha: %d\n", colors[i], GRADIENT_MAP[i][0], GRADIENT_MAP[i][1], GRADIENT_MAP[i][2], ALPHA);
+  }
+
+  fflush(stdout);
 
   unsigned int gstoreInd = 0;
 
@@ -96,10 +107,11 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
         quality = 0;
       }
       if(quality > 0) {
-        gdImageSetPixel(im, x, y, green);
+        gdImageSetPixel(im, x, y, colors[(int)quality*8]);
       }
     }
   }
+  free(colors);
 
   int imageSize = 1;
 
@@ -107,13 +119,11 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
   pngPointer = gdImagePngPtr(im, &imageSize);
 
   if(pngPointer) {
-    printf("imageSize: %d\n", imageSize);
     fflush(stdout);
-
     return rb_str_new(pngPointer, imageSize);
   }
   else {
-    printf("Damn thing failed...\n");
+    printf("*********************************\nImage Creation failed...\n*********************************");
     fflush(stdout);
     return Qnil;
   }
