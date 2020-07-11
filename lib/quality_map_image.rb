@@ -8,14 +8,4 @@ module QualityMapImage
     QualityMapC::Image.destroyImage
     image_blob
   end
-
-  def self.save_test_image
-    require "quality_map_image/test_image"
-    image_blob = QualityMapC::Image.buildImage(TEST_SOUTH_WEST, TEST_NORTH_EAST, TEST_STEP_INT, TEST_POINTS)
-    open('test_image.png', 'w') { |f|
-      f.puts image_blob
-    }
-    QualityMapC::Image.destroyImage
-    return true
-  end
 end
