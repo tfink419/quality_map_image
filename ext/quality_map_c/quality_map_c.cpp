@@ -76,15 +76,16 @@ ary_to_polygon(VALUE ary, ClipperLib::Path* poly)
   }
 }
 
+VALUE rbclipperSingleton = 0;
+
 // Taken from ruby-clipper
 // Is invoked by Data_Wrap_Struct when its closed I guess
 static void
 rbclipper_free(void* ptr)
 {
+  rbclipperSingleton = 0;
   delete (Clipper*) ptr;
 }
-
-VALUE rbclipperSingleton = 0;
 
 // Taken from ruby-clipper, I added a way to make it a singleton
 static VALUE
