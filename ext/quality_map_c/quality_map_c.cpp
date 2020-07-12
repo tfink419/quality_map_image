@@ -119,8 +119,8 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat, VALUE lngStart, VALUE rangeR
 
   VALUE pointQualities = rb_ary_new();
 
+  double *qualities = new double[polygonsLength];
   for(; x <= endPoint; x += MULTIPLE_DIFF) {
-    double *qualities = new double[polygonsLength];
     long numQualities = 0;
 
     for(long i = 0; i < polygonsLength; i++) {
@@ -132,9 +132,9 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat, VALUE lngStart, VALUE rangeR
       }
     }
     rb_ary_push(pointQualities, DBL2NUM(logExpSum(qualities, numQualities)));
-    delete[] qualities;
   }
 
+  delete[] qualities;
   return pointQualities;
 }
 
