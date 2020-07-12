@@ -1,6 +1,5 @@
 require "quality_map_c/quality_map_c"
 require "quality_map_image/version"
-require "quality_map_image/test_values"
 
 module QualityMapImage
   def self.get_image(south_west_int, north_east_int, step_int, points)
