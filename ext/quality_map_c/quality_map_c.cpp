@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
+#include <iostream>
 #include "gd.h"
 #include "gdfontt.h"
 #include "gdfonts.h"
@@ -11,14 +12,93 @@
 #include "ruby/ruby.h"
 #include "ruby/encoding.h"
 
-#include "gradient.h"
+#include "gradient.hpp"
+#include "clipper.hpp"
+
+using namespace std;
+using namespace ClipperLib;
+
+#define MULTIPLY_CONST 1000000000
+#define COORD_MULTIPLE 1000
+#define MULTIPLE_DIFF  1000000
+#define LOG_EXP 1.7
+
+// Taken from ruby-clipper https://github.com/mieko/rbclipper/blob/master/ext/clipper/rbclipper.cpp
+static inline Clipper*
+XCLIPPER(VALUE x)
+{
+  Clipper* clipper;
+  Data_Get_Struct(x, Clipper, clipper);
+  return clipper;
+}
+
+extern "C" {
 
 const int ALPHA = 64;
 
 void *pngPointer = NULL;
 gdImagePtr im;
 
-void checkPointArray(VALUE point) {
+static double logExpSum(double *values, long valuesLength) {
+  if(!valuesLength) {
+    return 0.0;
+  }
+  double sum = 0.0;
+  for(long i = 0; i < valuesLength; i++) {
+    sum += pow(LOG_EXP,values[i]);
+  }
+  return log(sum)/log(LOG_EXP);
+}
+
+// Taken from ruby-clipper
+static void
+ary_to_polygon(VALUE ary, ClipperLib::Path* poly)
+{
+  const char* earg =
+    "Paths have format: [[p0_x, p0_y], [p1_x, p1_y], ...]";
+
+  Check_Type(ary, T_ARRAY);
+
+  long aryLength = RARRAY_LEN(ary);
+
+  for(long i = 0; i < aryLength; i++) {
+    VALUE sub = rb_ary_entry(ary, i);
+    Check_Type(sub, T_ARRAY);
+
+    if(RARRAY_LEN(sub) != 2) {
+      rb_raise(rb_eArgError, "%s", earg);
+    }
+
+    VALUE px = rb_ary_entry(sub, 0);
+    VALUE py = rb_ary_entry(sub, 1);
+
+    poly->push_back(IntPoint((long64)(NUM2DBL(px) * MULTIPLY_CONST), (long64)(NUM2DBL(py) * MULTIPLY_CONST)));
+  }
+}
+
+// Taken from ruby-clipper
+// Is invoked by Data_Wrap_Struct when its closed I guess
+static void
+rbclipper_free(void* ptr)
+{
+  delete (Clipper*) ptr;
+}
+
+VALUE rbclipperSingleton = 0;
+
+// Taken from ruby-clipper, I added a way to make it a singleton
+static VALUE
+rbclipper_new(VALUE klass)
+{
+  if(!rbclipperSingleton) {
+    Clipper* ptr = new Clipper;
+    rbclipperSingleton = Data_Wrap_Struct(klass, 0, rbclipper_free, ptr);
+    rb_obj_call_init(rbclipperSingleton, 0, 0);
+  }
+  return rbclipperSingleton;
+}
+
+static void checkPointArray(VALUE point) {
   const char* pointError =
     "Points have format: [[p1_lat, p1_long, p1_quality], [p2_lat, p2_long, p2_quality], ...]";
 
@@ -29,11 +109,36 @@ void checkPointArray(VALUE point) {
   }
 }
 
-static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRuby, VALUE stepIntRuby, VALUE pointsRuby) {
-  /* Declare the image */
-  /* Declare output files */
-  /* Declare color indexes */
+static VALUE qualityOfPoints(VALUE self, VALUE lat, VALUE lngStart, VALUE rangeRuby, VALUE polygons) {
+  // X is lng, Y is lat
+  long64 x = ((long64)NUM2INT(lngStart))*MULTIPLE_DIFF;
+  long64 y = ((long64)NUM2INT(lat))*MULTIPLE_DIFF;
 
+  long64 endPoint = ((long64)NUM2INT(rangeRuby)*MULTIPLE_DIFF)+x-MULTIPLE_DIFF;
+  long polygonsLength = RARRAY_LEN(polygons);
+
+  VALUE pointQualities = rb_ary_new();
+
+  for(; x <= endPoint; x += MULTIPLE_DIFF) {
+    double *qualities = new double[polygonsLength];
+    long numQualities = 0;
+
+    for(long i = 0; i < polygonsLength; i++) {
+      ClipperLib::Path polygon;
+      ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), &polygon);
+
+      if(ClipperLib::PointInPolygon(IntPoint(x, y), polygon)) {
+        qualities[numQualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
+      }
+    }
+    rb_ary_push(pointQualities, DBL2NUM(logExpSum(qualities, numQualities)));
+    delete[] qualities;
+  }
+
+  return pointQualities;
+}
+
+static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRuby, VALUE stepIntRuby, VALUE pointsRuby) {
   const char* coordError =
     "Coordinates have format: [lat(int), long(int)]";
 
@@ -59,7 +164,7 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
 
   im = gdImageCreate(width, height);
 
-  int* colors = malloc(GRADIENT_MAP_SIZE * sizeof(int));
+  int* colors = new int[GRADIENT_MAP_SIZE];
 
   // The first color added is the background, it should be the quality 0 color
   for(int i = 0; i < GRADIENT_MAP_SIZE; i++) {
@@ -110,7 +215,7 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
       }
     }
   }
-  free(colors);
+  delete[] colors;
 
   int imageSize = 1;
 
@@ -119,7 +224,7 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
 
   if(pngPointer) {
     fflush(stdout);
-    return rb_str_new(pngPointer, imageSize);
+    return rb_str_new((char *)pngPointer, imageSize);
   }
   else {
     printf("*********************************\nImage Creation failed...\n*********************************");
@@ -134,10 +239,20 @@ static VALUE destroyImage(VALUE self) {
   gdImageDestroy(im);
 }
 
+
+typedef VALUE (*ruby_method)(...);
+
 void Init_quality_map_c(void) {
   VALUE QualityMapC = rb_define_module("QualityMapC");
   VALUE Image = rb_define_class_under(QualityMapC, "Image", rb_cObject);
+  VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
 
-  rb_define_singleton_method(Image, "buildImage", buildImage, 4);
-  rb_define_singleton_method(Image, "destroyImage", destroyImage, 0);
+
+  rb_define_singleton_method(Point, "createClipperSingleton", (ruby_method) rbclipper_new, 0);
+  rb_define_method(Point, "qualityOfPoints", (ruby_method) qualityOfPoints, 4);
+
+  rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 4);
+  rb_define_singleton_method(Image, "destroyImage", (ruby_method) destroyImage, 0);
 }
+
+} // extern "C"
