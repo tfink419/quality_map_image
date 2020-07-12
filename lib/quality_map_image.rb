@@ -1,6 +1,5 @@
 require "quality_map_c/quality_map_c"
 require "quality_map_image/version"
-require "quality_map_image/test_values"
 
 module QualityMapImage
   clipper_singleton = nil
