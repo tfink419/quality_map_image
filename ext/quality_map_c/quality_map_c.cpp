@@ -121,14 +121,18 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat, VALUE lngStart, VALUE rangeR
   VALUE pointQualities = rb_ary_new();
 
   double *qualities = new double[polygonsLength];
+  ClipperLib::Path *clipperPolygons = new ClipperLib::Path[polygonsLength];
+
+  for(long i = 0; i < polygonsLength; i++) {
+    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipperPolygons+i);
+  }
+  
   for(; x <= endPoint; x += MULTIPLE_DIFF) {
     long numQualities = 0;
 
     for(long i = 0; i < polygonsLength; i++) {
-      ClipperLib::Path polygon;
-      ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), &polygon);
 
-      if(ClipperLib::PointInPolygon(IntPoint(x, y), polygon)) {
+      if(ClipperLib::PointInPolygon(IntPoint(x, y), clipperPolygons[i])) {
         qualities[numQualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
       }
     }
@@ -136,6 +140,7 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat, VALUE lngStart, VALUE rangeR
   }
 
   delete[] qualities;
+  delete[] clipperPolygons;
   return pointQualities;
 }
 
