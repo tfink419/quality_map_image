@@ -10,12 +10,6 @@ module QualityMapImage
   end
 
   def self.quality_of_points(lat, lng, range, polygons)
-    polygons = polygons.map{ |polygon_and_quality| 
-      [
-        polygon_and_quality[0].map { |coord| coord.map(&:to_f) },
-        polygon_and_quality[1]
-      ]
-    }
     QualityMapC::Point.qualityOfPoints(lat, lng, range, polygons)
   end
 
