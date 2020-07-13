@@ -10,14 +10,13 @@ module QualityMapImage
   end
 
   def self.quality_of_points(lat, lng, range, polygons)
-    clipper = QualityMapC::Point.createClipperSingleton # Its a singleton internally so no worries
     polygons = polygons.map{ |polygon_and_quality| 
       [
         polygon_and_quality[0].map { |coord| coord.map(&:to_f) },
         polygon_and_quality[1]
       ]
     }
-    clipper.qualityOfPoints(lat, lng, range, polygons)
+    QualityMapC::Point.qualityOfPoints(lat, lng, range, polygons)
   end
 
   def self.quality_of_point(lat, lng, polygons)
