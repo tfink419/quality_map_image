@@ -9,11 +9,11 @@ module QualityMapImage
     image_blob
   end
 
-  def self.quality_of_points(lat, lng, range, polygons)
-    QualityMapC::Point.qualityOfPoints(lat, lng, range, polygons)
+  def self.quality_of_points(lat, lng, lat_range, lng_range, polygons)
+    QualityMapC::Point.qualityOfPoints(lat, lng, lat_range, lng_range, polygons)
   end
 
   def self.quality_of_point(lat, lng, polygons)
-    self.quality_of_points(lat, lng, 1, polygons)[0]
+    self.quality_of_points(lat, lng, 1, 1, polygons).first
   end
 end
