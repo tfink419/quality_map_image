@@ -86,7 +86,7 @@ static VALUE qualityOfPoints(VALUE self, VALUE latStart, VALUE lngStart, VALUE l
 
   long latRange = NUM2INT(latRangeRuby), lngRange = NUM2INT(lngRangeRuby);
 
-  long64 lngEnd = ((long64)lngRange*MULTIPLE_DIFF)+x-MULTIPLE_DIFF;
+  long64 lngEnd = ((long64)lngRange*MULTIPLE_DIFF)+xStart-MULTIPLE_DIFF;
   long64 latEnd = ((long64)latRange*MULTIPLE_DIFF)+y-MULTIPLE_DIFF;
   long polygonsLength = RARRAY_LEN(polygons);
 
