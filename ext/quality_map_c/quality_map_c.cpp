@@ -81,7 +81,7 @@ static void checkPointArray(VALUE point) {
 
 static VALUE qualityOfPoints(VALUE self, VALUE latStart, VALUE lngStart, VALUE latRangeRuby, VALUE lngRangeRuby, VALUE polygons) {
   // X is lng, Y is lat
-  long64 x = ((long64)NUM2INT(lngStart))*MULTIPLE_DIFF;
+  long64 xStart = ((long64)NUM2INT(lngStart))*MULTIPLE_DIFF;
   long64 y = ((long64)NUM2INT(latStart))*MULTIPLE_DIFF;
 
   long latRange = NUM2INT(latRangeRuby), lngRange = NUM2INT(lngRangeRuby);
@@ -98,8 +98,10 @@ static VALUE qualityOfPoints(VALUE self, VALUE latStart, VALUE lngStart, VALUE l
   for(long i = 0; i < polygonsLength; i++) {
     ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipperPolygons+i);
   }
+  long64 x;
   
   for(; y <= latEnd; y += MULTIPLE_DIFF) {
+    x = xStart;
     for(; x <= lngEnd; x += MULTIPLE_DIFF) {
       long numQualities = 0;
 
