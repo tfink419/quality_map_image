@@ -227,7 +227,7 @@ void Init_quality_map_c(void) {
   VALUE Image = rb_define_class_under(QualityMapC, "Image", rb_cObject);
   VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
 
-  rb_define_singleton_method(Point, "qualityOfPoints", (ruby_method) qualityOfPoints, 4);
+  rb_define_singleton_method(Point, "qualityOfPoints", (ruby_method) qualityOfPoints, 5);
 
   rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 4);
   rb_define_singleton_method(Image, "destroyImage", (ruby_method) destroyImage, 0);
