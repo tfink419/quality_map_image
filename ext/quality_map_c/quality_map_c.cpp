@@ -79,15 +79,18 @@ static void checkPointArray(VALUE point) {
   }
 }
 
-static VALUE qualityOfPoints(VALUE self, VALUE lat, VALUE lngStart, VALUE rangeRuby, VALUE polygons) {
+static VALUE qualityOfPoints(VALUE self, VALUE latStart, VALUE lngStart, VALUE latRangeRuby, VALUE lngRangeRuby, VALUE polygons) {
   // X is lng, Y is lat
   long64 x = ((long64)NUM2INT(lngStart))*MULTIPLE_DIFF;
-  long64 y = ((long64)NUM2INT(lat))*MULTIPLE_DIFF;
+  long64 y = ((long64)NUM2INT(latStart))*MULTIPLE_DIFF;
 
-  long64 endPoint = ((long64)NUM2INT(rangeRuby)*MULTIPLE_DIFF)+x-MULTIPLE_DIFF;
+  long latRange = NUM2INT(latRangeRuby), lngRange = NUM2INT(lngRangeRuby);
+
+  long64 lngEnd = ((long64)lngRange*MULTIPLE_DIFF)+x-MULTIPLE_DIFF;
+  long64 latEnd = ((long64)latRange*MULTIPLE_DIFF)+y-MULTIPLE_DIFF;
   long polygonsLength = RARRAY_LEN(polygons);
 
-  VALUE pointQualities = rb_ary_new();
+  VALUE pointQualities = rb_ary_new2(latRange*lngRange);
 
   double *qualities = new double[polygonsLength];
   ClipperLib::Path *clipperPolygons = new ClipperLib::Path[polygonsLength];
@@ -96,16 +99,18 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat, VALUE lngStart, VALUE rangeR
     ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipperPolygons+i);
   }
   
-  for(; x <= endPoint; x += MULTIPLE_DIFF) {
-    long numQualities = 0;
+  for(; y <= latEnd; y += MULTIPLE_DIFF) {
+    for(; x <= lngEnd; x += MULTIPLE_DIFF) {
+      long numQualities = 0;
 
-    for(long i = 0; i < polygonsLength; i++) {
+      for(long i = 0; i < polygonsLength; i++) {
 
-      if(PointInPolygon(IntPoint(x, y), clipperPolygons[i])) {
-        qualities[numQualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
+        if(PointInPolygon(IntPoint(x, y), clipperPolygons[i])) {
+          qualities[numQualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
+        }
       }
+      rb_ary_push(pointQualities, DBL2NUM(logExpSum(qualities, numQualities)));
     }
-    rb_ary_push(pointQualities, DBL2NUM(logExpSum(qualities, numQualities)));
   }
 
   delete[] qualities;
