@@ -231,10 +231,13 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
 
   /* Generate a blob of the image */
   pngPointer = gdImagePngPtr(im, &imageSize);
+  gdImageDestroy(im);
 
+  fflush(stdout);
   if(pngPointer) {
-    fflush(stdout);
-    return rb_str_new((char *)pngPointer, imageSize);
+    VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
+    gdFree(pngPointer);
+    return ruby_blob;
   }
   else {
     printf("*********************************\nImage Creation failed...\n*********************************");
@@ -242,13 +245,6 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
     return Qnil;
   }
 }
-
-static VALUE destroyImage(VALUE self) {
-  /* Destroy the image in memory. */
-  gdFree(pngPointer);
-  gdImageDestroy(im);
-}
-
 
 typedef VALUE (*ruby_method)(...);
 
@@ -261,7 +257,6 @@ void Init_quality_map_c(void) {
   rb_define_singleton_method(Point, "qualityOfPoint", (ruby_method) qualityOfPoint, 3);
 
   rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 4);
-  rb_define_singleton_method(Image, "destroyImage", (ruby_method) destroyImage, 0);
 }
 
 } // extern "C"
