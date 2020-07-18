@@ -177,8 +177,8 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
   int* colors = new int[GRADIENT_MAP_SIZE];
 
   // The first color added is the background, it should be the quality 0 color
-  for(int i = 0; i < GRADIENT_MAP_SIZE; i++) {
-    colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[i][0], GRADIENT_MAP[i][1], GRADIENT_MAP[i][2], ALPHA);
+  for(int i = 0, pos = 0; i < GRADIENT_MAP_SIZE; i++) {
+    colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[pos++], GRADIENT_MAP[pos++], GRADIENT_MAP[pos++], ALPHA);
   }
 
   fflush(stdout);

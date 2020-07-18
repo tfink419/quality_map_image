@@ -17,9 +17,9 @@ task :build_gradient_map do
     colors << [color.red.to_i, color.green.to_i, color.blue.to_i]
   end
   output = "#include \"gradient.hpp\""
-  output += "\n#define GRADIENT_MAP_SIZE_PRE #{colors.length}"
-  output += "\nconst int GRADIENT_MAP_SIZE = GRADIENT_MAP_SIZE_PRE;"
-  output += "\nconst int GRADIENT_MAP[GRADIENT_MAP_SIZE_PRE][3] = {"+colors.map{ |color| "{#{color.join(",")}}"}.join(",")+"};"
+  output += "\n#define GRADIENT_MAP_SIZE_PRE #{colors.length*3}"
+  output += "\nconst int GRADIENT_MAP_SIZE = GRADIENT_MAP_SIZE_PRE/3;"
+  output += "\nconst int GRADIENT_MAP[GRADIENT_MAP_SIZE_PRE] = {"+colors.map{ |color| color.join(",")}.join(",")+"};"
 
   open('ext/quality_map_c/gradient.cpp', 'w') { |f|
     f.puts output
