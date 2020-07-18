@@ -1,7 +1,10 @@
 require 'mkmf'
 
+abort 'Missing GD library.' unless have_library('gd', 'gdImageCreate')
 abort 'Missing PNG library.' unless have_library('png')
 abort 'Missing Z library.' unless have_library('z')
+abort 'Missing JPEG library.' unless have_library('jpeg')
+abort 'Missing FreeType library.' unless have_library('freetype')
 abort 'Missing M library.' unless have_library('m')
 
 LIBDIR      = RbConfig::CONFIG['libdir']
