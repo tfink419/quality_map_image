@@ -196,10 +196,13 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
     currentPointLong = NUM2INT(rb_ary_entry(point, 1));
     currentPointQuality = NUM2DBL(rb_ary_entry(point, 2));
   }
+
+  double quality;
+  int x, y, lat, lng;
   // Iterate through coordinates, changing each pixel at that coordinate based on the point(s) there
-  for(int lat = south, y = height-1; lat <= north; lat += stepInt, y--) {
-    for(int lng = west, x = 0; lng <= east; lng += stepInt, x++) {
-      double quality = 0;
+  for(lat = south, y = height-1; lat <= north; lat += stepInt, y--) {
+    for(lng = west, x = 0; lng <= east; lng += stepInt, x++) {
+      quality = 0;
       if(currentPointExists && currentPointLat == lat && currentPointLong == lng) {
         quality = currentPointQuality;
         if(++gstoreInd < RARRAY_LEN(pointsRuby)) {
@@ -240,7 +243,7 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
     return ruby_blob;
   }
   else {
-    printf("*********************************\nImage Creation failed...\n*********************************");
+    rb_raise(rb_eRuntimeError, "%s", "Image blob creation failed.")
     fflush(stdout);
     return Qnil;
   }
