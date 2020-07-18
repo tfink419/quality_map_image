@@ -237,16 +237,12 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
   gdImageDestroy(im);
 
   fflush(stdout);
-  if(pngPointer) {
-    VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
-    gdFree(pngPointer);
-    return ruby_blob;
+  if(!pngPointer) {
+    rb_raise(rb_eRuntimeError, "%s", "Image blob creation failed.");
   }
-  else {
-    rb_raise(rb_eRuntimeError, "%s", "Image blob creation failed.")
-    fflush(stdout);
-    return Qnil;
-  }
+  VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
+  gdFree(pngPointer);
+  return ruby_blob;
 }
 
 typedef VALUE (*ruby_method)(...);
