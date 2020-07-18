@@ -120,6 +120,34 @@ static VALUE qualityOfPoints(VALUE self, VALUE latStart, VALUE lngStart, VALUE l
   return pointQualities;
 }
 
+static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons) {
+  // X is lng, Y is lat
+  long64 x = ((long64)NUM2INT(lng))*MULTIPLE_DIFF;
+  long64 y = ((long64)NUM2INT(lat))*MULTIPLE_DIFF;
+
+  long polygonsLength = RARRAY_LEN(polygons);
+
+  double *qualities = new double[polygonsLength];
+  VALUE ids = rb_ary_new();
+  ClipperLib::Path *clipperPolygons = new ClipperLib::Path[polygonsLength];
+
+  for(long i = 0; i < polygonsLength; i++) {
+    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipperPolygons+i);
+  }
+
+  long numQualities = 0;
+  for(long i = 0; i < polygonsLength; i++) {
+    if(PointInPolygon(IntPoint(x, y), clipperPolygons[i])) {
+      qualities[numQualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
+      rb_ary_push(ids, rb_ary_entry(rb_ary_entry(polygons, i),2));
+    }
+  }
+  double quality = logExpSum(qualities, numQualities);
+  delete[] qualities;
+  delete[] clipperPolygons;
+  return rb_ary_new_from_args(2, DBL2NUM(quality), ids);
+}
+
 static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRuby, VALUE stepIntRuby, VALUE pointsRuby) {
   const char* coordError =
     "Coordinates have format: [lat(int), long(int)]";
@@ -230,6 +258,7 @@ void Init_quality_map_c(void) {
   VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
 
   rb_define_singleton_method(Point, "qualityOfPoints", (ruby_method) qualityOfPoints, 5);
+  rb_define_singleton_method(Point, "qualityOfPoint", (ruby_method) qualityOfPoint, 3);
 
   rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 4);
   rb_define_singleton_method(Image, "destroyImage", (ruby_method) destroyImage, 0);

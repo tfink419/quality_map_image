@@ -14,6 +14,6 @@ module QualityMapImage
   end
 
   def self.quality_of_point(lat, lng, polygons)
-    self.quality_of_points(lat, lng, 1, 1, polygons).first
+    QualityMapC::Point.qualityOfPoint(lat, lng, polygons)
   end
 end
