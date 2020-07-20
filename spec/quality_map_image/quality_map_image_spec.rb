@@ -18,8 +18,12 @@ RSpec.describe QualityMapImage do
     expect(subject::VERSION).not_to be nil
   end
 
-  it "gets the quality of point and returns ids" do
-    expect(subject.quality_of_point(QUALITY_OF_POINT_LAT, QUALITY_OF_POINT_LONG, QUALITY_OF_POINT_POLYGONS)).to eq([12.070399166401323, [1, 2, 3]] )
+  it "gets the First quality of point and returns ids" do
+    expect(subject.quality_of_point(QUALITY_OF_POINT_LAT, QUALITY_OF_POINT_LONG, QUALITY_OF_POINT_POLYGONS, "First", 1)).to eq([10, [1]] )
+  end
+
+  it "gets the LogExpSum quality of point and returns ids" do
+    expect(subject.quality_of_point(QUALITY_OF_POINT_LAT, QUALITY_OF_POINT_LONG, QUALITY_OF_POINT_POLYGONS, "LogExpSum", 1.7)).to eq([12.070399166401323, [1, 2, 3]] )
   end
 
   it "builds a 5x5 image with a red background and a green line running from bottom-left to top-right" do

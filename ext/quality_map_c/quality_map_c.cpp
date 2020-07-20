@@ -21,25 +21,27 @@ using namespace ClipperLib;
 #define MULTIPLY_CONST 1000000000
 #define COORD_MULTIPLE 1000
 #define MULTIPLE_DIFF  1000000
-#define LOG_EXP 1.7
 
 
 extern "C" {
 
+enum QualityCalcMethod {QualityLogExpSum = 0, QualityFirst = 1}; 
+
+
 const int ALPHA = 64;
 
-void *pngPointer = NULL;
+void *png_pointer = NULL;
 gdImagePtr im;
 
-static double logExpSum(double *values, long valuesLength) {
-  if(!valuesLength) {
+static double LogExpSum(double *values, long values_length, double log_exp) {
+  if(!values_length) {
     return 0.0;
   }
   double sum = 0.0;
-  for(long i = 0; i < valuesLength; i++) {
-    sum += pow(LOG_EXP,values[i]);
+  for(long i = 0; i < values_length; i++) {
+    sum += pow(log_exp,values[i]);
   }
-  return log(sum)/log(LOG_EXP);
+  return log(sum)/log(log_exp);
 }
 
 // Taken from ruby-clipper https://github.com/mieko/rbclipper/blob/master/ext/clipper/rbclipper.cpp
@@ -64,7 +66,7 @@ ary_to_polygon(VALUE ary, ClipperLib::Path* poly)
     VALUE px = rb_ary_entry(sub, 0);
     VALUE py = rb_ary_entry(sub, 1);
 
-    poly->push_back(IntPoint((long64)(NUM2DBL(px) * MULTIPLY_CONST), (long64)(NUM2DBL(py) * MULTIPLY_CONST)));
+    poly->push_back(IntPoint((long long)(NUM2DBL(px) * MULTIPLY_CONST), (long long)(NUM2DBL(py) * MULTIPLY_CONST)));
   }
 }
 
@@ -79,142 +81,202 @@ static void checkPointArray(VALUE point) {
   }
 }
 
-static VALUE qualityOfPoints(VALUE self, VALUE latStart, VALUE lngStart, VALUE latRangeRuby, VALUE lngRangeRuby, VALUE polygons) {
-  // X is lng, Y is lat
-  long64 xStart = ((long64)NUM2INT(lngStart))*MULTIPLE_DIFF;
-  long64 y = ((long64)NUM2INT(latStart))*MULTIPLE_DIFF;
-
-  long latRange = NUM2INT(latRangeRuby), lngRange = NUM2INT(lngRangeRuby);
-
-  long64 lngEnd = ((long64)lngRange*MULTIPLE_DIFF)+xStart-MULTIPLE_DIFF;
-  long64 latEnd = ((long64)latRange*MULTIPLE_DIFF)+y-MULTIPLE_DIFF;
-  long polygonsLength = RARRAY_LEN(polygons);
-
-  VALUE pointQualities = rb_ary_new2(latRange*lngRange);
-
-  double *qualities = new double[polygonsLength];
-  ClipperLib::Path *clipperPolygons = new ClipperLib::Path[polygonsLength];
-
-  for(long i = 0; i < polygonsLength; i++) {
-    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipperPolygons+i);
-  }
-  long64 x;
-  
-  for(; y <= latEnd; y += MULTIPLE_DIFF) {
-    x = xStart;
-    for(; x <= lngEnd; x += MULTIPLE_DIFF) {
-      long numQualities = 0;
-
-      for(long i = 0; i < polygonsLength; i++) {
-
-        if(PointInPolygon(IntPoint(x, y), clipperPolygons[i])) {
-          qualities[numQualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
-        }
+long QualitiesOfPoint(long long &x, long long &y, double *&qualities, ClipperLib::Path *&clipper_polygons, VALUE &polygons, long &polygons_length, VALUE ids) {
+  long num_qualities = 0;
+  IntPoint intPoint = IntPoint(x, y);
+  for(long i = 0; i < polygons_length; i++) {
+    if(PointInPolygon(intPoint, clipper_polygons[i])) {
+      qualities[num_qualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
+      if(ids) {
+        rb_ary_push(ids, rb_ary_entry(rb_ary_entry(polygons, i),2));
       }
-      rb_ary_push(pointQualities, DBL2NUM(logExpSum(qualities, numQualities)));
     }
   }
-
-  delete[] qualities;
-  delete[] clipperPolygons;
-  return pointQualities;
+  return num_qualities;
 }
 
-static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons) {
+// quality_calc_method is an
+static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start, 
+  VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long64 x = ((long64)NUM2INT(lng))*MULTIPLE_DIFF;
-  long64 y = ((long64)NUM2INT(lat))*MULTIPLE_DIFF;
+  long long x_start = ((long long)NUM2INT(lng_start))*MULTIPLE_DIFF;
+  long long y = ((long long)NUM2INT(lat_start))*MULTIPLE_DIFF;
 
-  long polygonsLength = RARRAY_LEN(polygons);
+  long lat_range = NUM2INT(lat_range_ruby), lng_range = NUM2INT(lng_range_ruby);
 
-  double *qualities = new double[polygonsLength];
-  VALUE ids = rb_ary_new();
-  ClipperLib::Path *clipperPolygons = new ClipperLib::Path[polygonsLength];
+  long long lng_end = ((long long)lng_range*MULTIPLE_DIFF)+x_start-MULTIPLE_DIFF;
+  long long lat_end = ((long long)lat_range*MULTIPLE_DIFF)+y-MULTIPLE_DIFF;
+  long polygons_length = RARRAY_LEN(polygons);
 
-  for(long i = 0; i < polygonsLength; i++) {
-    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipperPolygons+i);
+  enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
+  double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
+
+  VALUE point_qualities = rb_ary_new2(lat_range*lng_range);
+
+  double *qualities;
+  switch(quality_calc_method) {
+    case QualityLogExpSum:
+      qualities = new double[polygons_length];
+      break;
   }
+  ClipperLib::Path *clipper_polygons = new ClipperLib::Path[polygons_length];
 
-  long numQualities = 0;
-  for(long i = 0; i < polygonsLength; i++) {
-    if(PointInPolygon(IntPoint(x, y), clipperPolygons[i])) {
-      qualities[numQualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
-      rb_ary_push(ids, rb_ary_entry(rb_ary_entry(polygons, i),2));
+  for(long i = 0; i < polygons_length; i++) {
+    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipper_polygons+i);
+  }
+  long long x;
+  
+  for(; y <= lat_end; y += MULTIPLE_DIFF) {
+    for(x = x_start; x <= lng_end; x += MULTIPLE_DIFF) {
+      switch(quality_calc_method) {
+        case QualityLogExpSum:
+        {
+          long num_qualities = QualitiesOfPoint(x, y, qualities, clipper_polygons, polygons, polygons_length, NULL);
+          rb_ary_push(point_qualities, DBL2NUM(LogExpSum(qualities, num_qualities, quality_calc_value)));
+          break;
+        }
+        case QualityFirst:
+          for(long i = 0; i < polygons_length; i++) {
+            if(PointInPolygon(IntPoint(x, y), clipper_polygons[i])) {
+              rb_ary_push(point_qualities, rb_ary_entry(rb_ary_entry(polygons, i),1));
+              break;
+            }
+          }
+          break;
+        default:
+          rb_raise(rb_eRuntimeError, "%s", "Unknown Calc Method Type Chosen");
+      }
     }
   }
-  double quality = logExpSum(qualities, numQualities);
-  delete[] qualities;
-  delete[] clipperPolygons;
+
+  switch(quality_calc_method) {
+    case QualityLogExpSum:
+      delete[] qualities;
+      break;
+  }
+  delete[] clipper_polygons;
+  return point_qualities;
+}
+
+static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
+  // X is lng, Y is lat
+  long long x = ((long long)NUM2INT(lng))*MULTIPLE_DIFF;
+  long long y = ((long long)NUM2INT(lat))*MULTIPLE_DIFF;
+  enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
+  double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
+
+  long polygons_length = RARRAY_LEN(polygons);
+
+  double *qualities;
+  switch(quality_calc_method) {
+    case QualityLogExpSum:
+      qualities = new double[polygons_length];
+      break;
+  }
+  VALUE ids = rb_ary_new();
+  ClipperLib::Path *clipper_polygons = new ClipperLib::Path[polygons_length];
+
+  for(long i = 0; i < polygons_length; i++) {
+    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipper_polygons+i);
+  }
+
+  double quality;
+  switch(quality_calc_method) {
+    case QualityLogExpSum:
+    {
+      long num_qualities = QualitiesOfPoint(x, y, qualities, clipper_polygons, polygons, polygons_length, ids);
+      quality = LogExpSum(qualities, num_qualities, quality_calc_value);
+      break;
+    }
+    case QualityFirst:
+      for(long i = 0; i < polygons_length; i++) {
+        if(PointInPolygon(IntPoint(x, y), clipper_polygons[i])) {
+          quality = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
+          rb_ary_push(ids, rb_ary_entry(rb_ary_entry(polygons, i),2));
+          break;
+        }
+      }
+      break;
+    default:
+      rb_raise(rb_eRuntimeError, "%s", "Unknown Calc Method Type Chosen");
+  }
+
+  switch(quality_calc_method) {
+    case QualityLogExpSum:
+      delete[] qualities;
+      break;
+  }
+  delete[] clipper_polygons;
   return rb_ary_new_from_args(2, DBL2NUM(quality), ids);
 }
 
-static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRuby, VALUE stepIntRuby, VALUE pointsRuby) {
-  const char* coordError =
+static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_int_ruby, VALUE step_int_ruby, VALUE points_ruby) {
+  const char* coord_error =
     "Coordinates have format: [lat(int), long(int)]";
 
-  Check_Type(southWestIntRuby, T_ARRAY);
-  if(RARRAY_LEN(southWestIntRuby) != 2) {
-    rb_raise(rb_eArgError, "%s", coordError);
+  Check_Type(south_west_int_ruby, T_ARRAY);
+  if(RARRAY_LEN(south_west_int_ruby) != 2) {
+    rb_raise(rb_eArgError, "%s", coord_error);
   }
-  Check_Type(northEastIntRuby, T_ARRAY);
-  if(RARRAY_LEN(northEastIntRuby) != 2) {
-    rb_raise(rb_eArgError, "%s", coordError);
+  Check_Type(north_east_int_ruby, T_ARRAY);
+  if(RARRAY_LEN(north_east_int_ruby) != 2) {
+    rb_raise(rb_eArgError, "%s", coord_error);
   }
-  Check_Type(pointsRuby, T_ARRAY);
+  Check_Type(points_ruby, T_ARRAY);
 
 
-  int south = NUM2INT(rb_ary_entry(southWestIntRuby, 0));
-  int west = NUM2INT(rb_ary_entry(southWestIntRuby, 1));
-  int north = NUM2INT(rb_ary_entry(northEastIntRuby, 0));
-  int east = NUM2INT(rb_ary_entry(northEastIntRuby, 1));
-  int stepInt = NUM2INT(stepIntRuby);
+  int south = NUM2INT(rb_ary_entry(south_west_int_ruby, 0));
+  int west = NUM2INT(rb_ary_entry(south_west_int_ruby, 1));
+  int north = NUM2INT(rb_ary_entry(north_east_int_ruby, 0));
+  int east = NUM2INT(rb_ary_entry(north_east_int_ruby, 1));
+  int step_int = NUM2INT(step_int_ruby);
 
-  int width = ((east-west)/stepInt)+1;
-  int height = ((north-south)/stepInt)+1;
+  int width = ((east-west)/step_int)+1;
+  int height = ((north-south)/step_int)+1;
 
   im = gdImageCreate(width, height);
 
   int* colors = new int[GRADIENT_MAP_SIZE];
 
   // The first color added is the background, it should be the quality 0 color
-  for(int i = 0, pos = 0; i < GRADIENT_MAP_SIZE; i++) {
-    colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[pos++], GRADIENT_MAP[pos++], GRADIENT_MAP[pos++], ALPHA);
+  for(int i = 0, pos = 0; i < GRADIENT_MAP_SIZE; i++, pos+=3) {
+    colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[pos], GRADIENT_MAP[pos+1], GRADIENT_MAP[pos+2], ALPHA);
   }
 
   fflush(stdout);
 
-  unsigned int gstoreInd = 0;
+  unsigned int gstore_ind = 0;
 
   VALUE point;
-  short currentPointExists = (RARRAY_LEN(pointsRuby) > 0);
-  int currentPointLat, currentPointLong;
-  double currentPointQuality;
-  if(currentPointExists) {
-    point = rb_ary_entry(pointsRuby, 0);
+  short current_point_exists = (RARRAY_LEN(points_ruby) > 0);
+  int current_point_lat, current_point_long;
+  double current_point_quality;
+  if(current_point_exists) {
+    point = rb_ary_entry(points_ruby, 0);
     checkPointArray(point);
-    currentPointLat = NUM2INT(rb_ary_entry(point, 0));
-    currentPointLong = NUM2INT(rb_ary_entry(point, 1));
-    currentPointQuality = NUM2DBL(rb_ary_entry(point, 2));
+    current_point_lat = NUM2INT(rb_ary_entry(point, 0));
+    current_point_long = NUM2INT(rb_ary_entry(point, 1));
+    current_point_quality = NUM2DBL(rb_ary_entry(point, 2));
   }
 
   double quality;
   int x, y, lat, lng;
   // Iterate through coordinates, changing each pixel at that coordinate based on the point(s) there
-  for(lat = south, y = height-1; lat <= north; lat += stepInt, y--) {
-    for(lng = west, x = 0; lng <= east; lng += stepInt, x++) {
+  for(lat = south, y = height-1; lat <= north; lat += step_int, y--) {
+    for(lng = west, x = 0; lng <= east; lng += step_int, x++) {
       quality = 0;
-      if(currentPointExists && currentPointLat == lat && currentPointLong == lng) {
-        quality = currentPointQuality;
-        if(++gstoreInd < RARRAY_LEN(pointsRuby)) {
-          point = rb_ary_entry(pointsRuby, gstoreInd);
+      if(current_point_exists && current_point_lat == lat && current_point_long == lng) {
+        quality = current_point_quality;
+        if(++gstore_ind < RARRAY_LEN(points_ruby)) {
+          point = rb_ary_entry(points_ruby, gstore_ind);
           checkPointArray(point);
 
-          currentPointLat = NUM2INT(rb_ary_entry(point, 0));
-          currentPointLong = NUM2INT(rb_ary_entry(point, 1));
-          currentPointQuality = NUM2DBL(rb_ary_entry(point, 2));
+          current_point_lat = NUM2INT(rb_ary_entry(point, 0));
+          current_point_long = NUM2INT(rb_ary_entry(point, 1));
+          current_point_quality = NUM2DBL(rb_ary_entry(point, 2));
         }
         else {
-          currentPointExists = 0; // false
+          current_point_exists = 0; // false
         }
       }
       if(quality > 12.5) {
@@ -230,18 +292,18 @@ static VALUE buildImage(VALUE self, VALUE southWestIntRuby, VALUE northEastIntRu
   }
   delete[] colors;
 
-  int imageSize = 1;
+  int image_size = 1;
 
   /* Generate a blob of the image */
-  pngPointer = gdImagePngPtr(im, &imageSize);
+  png_pointer = gdImagePngPtr(im, &image_size);
   gdImageDestroy(im);
 
   fflush(stdout);
-  if(!pngPointer) {
+  if(!png_pointer) {
     rb_raise(rb_eRuntimeError, "%s", "Image blob creation failed.");
   }
-  VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
-  gdFree(pngPointer);
+  VALUE ruby_blob = rb_str_new((char *)png_pointer, image_size);
+  gdFree(png_pointer);
   return ruby_blob;
 }
 
@@ -253,7 +315,7 @@ void Init_quality_map_c(void) {
   VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
 
   rb_define_singleton_method(Point, "qualityOfPoints", (ruby_method) qualityOfPoints, 5);
-  rb_define_singleton_method(Point, "qualityOfPoint", (ruby_method) qualityOfPoint, 3);
+  rb_define_singleton_method(Point, "qualityOfPoint", (ruby_method) qualityOfPoint, 5);
 
   rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 4);
 }
