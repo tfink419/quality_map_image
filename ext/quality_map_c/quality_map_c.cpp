@@ -180,7 +180,7 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
     ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipper_polygons+i);
   }
 
-  double quality;
+  double quality = NULL;
   switch(quality_calc_method) {
     case QualityLogExpSum:
     {
@@ -213,6 +213,8 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
 static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_int_ruby, VALUE step_int_ruby, VALUE points_ruby) {
   const char* coord_error =
     "Coordinates have format: [lat(int), long(int)]";
+  const char* outer_points_array_error =
+    "Outer Points Array must have format: [range_low, range_high, multiple, points]";
 
   Check_Type(south_west_int_ruby, T_ARRAY);
   if(RARRAY_LEN(south_west_int_ruby) != 2) {
@@ -223,6 +225,9 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
     rb_raise(rb_eArgError, "%s", coord_error);
   }
   Check_Type(points_ruby, T_ARRAY);
+  if(RARRAY_LEN(rb_ary_entry(points_ruby, 0)) != 4) {
+    rb_raise(rb_eArgError, "%s", outer_points_array_error);
+  }
 
 
   int south = NUM2INT(rb_ary_entry(south_west_int_ruby, 0));
@@ -236,6 +241,7 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
 
   im = gdImageCreate(width, height);
 
+
   int* colors = new int[GRADIENT_MAP_SIZE];
 
   // The first color added is the background, it should be the quality 0 color
@@ -243,54 +249,80 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
     colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[pos], GRADIENT_MAP[pos+1], GRADIENT_MAP[pos+2], ALPHA);
   }
 
-  fflush(stdout);
-
-  unsigned int gstore_ind = 0;
+  long num_point_types = RARRAY_LEN(points_ruby);
 
   VALUE point;
-  short current_point_exists = (RARRAY_LEN(points_ruby) > 0);
-  int current_point_lat, current_point_long;
-  double current_point_quality;
-  if(current_point_exists) {
-    point = rb_ary_entry(points_ruby, 0);
-    checkPointArray(point);
-    current_point_lat = NUM2INT(rb_ary_entry(point, 0));
-    current_point_long = NUM2INT(rb_ary_entry(point, 1));
-    current_point_quality = NUM2DBL(rb_ary_entry(point, 2));
+  long *points_indexes = new long[num_point_types];
+  bool *current_point_exists = new bool[num_point_types];
+  long *points_lengths = new long[num_point_types];
+  int *current_point_lats = new int[num_point_types];
+  int *current_point_longs = new int[num_point_types];
+  double *points_lows = new double[num_point_types];
+  double *points_highs = new double[num_point_types];
+  double *points_multiples = new double[num_point_types];
+  double *current_point_values = new double[num_point_types];
+  for(long i = 0; i < num_point_types; i++) {
+    points_indexes[i] = 0;
+    points_lengths[i] = RARRAY_LEN(rb_ary_entry(rb_ary_entry(points_ruby, i),3));
+    current_point_exists[i] = (points_lengths[i] > 0);
+    points_lows[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 0));
+    points_highs[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 1));
+    points_multiples[i] = (GRADIENT_MAP_SIZE-1)/(points_highs[i]-points_lows[i])*NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 2));
+    if(current_point_exists[i]) {
+      point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 3),0);
+      checkPointArray(point);
+      current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
+      current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
+      current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
+    }
   }
 
-  double quality;
-  int x, y, lat, lng;
+  double quality, current_value;
+  long i, x, y, lat, lng;
   // Iterate through coordinates, changing each pixel at that coordinate based on the point(s) there
   for(lat = south, y = height-1; lat <= north; lat += step_int, y--) {
     for(lng = west, x = 0; lng <= east; lng += step_int, x++) {
       quality = 0;
-      if(current_point_exists && current_point_lat == lat && current_point_long == lng) {
-        quality = current_point_quality;
-        if(++gstore_ind < RARRAY_LEN(points_ruby)) {
-          point = rb_ary_entry(points_ruby, gstore_ind);
-          checkPointArray(point);
-
-          current_point_lat = NUM2INT(rb_ary_entry(point, 0));
-          current_point_long = NUM2INT(rb_ary_entry(point, 1));
-          current_point_quality = NUM2DBL(rb_ary_entry(point, 2));
+      for(i = 0; i < num_point_types; i++) {
+        if(current_point_exists[i] && current_point_lats[i] == lat && current_point_longs[i] == lng) {
+          current_value = current_point_values[i];
+          if(++points_indexes[i] < points_lengths[i]) {
+            point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 3), points_indexes[i]);
+            // checkPointArray(point); // Don't know how much this costs
+            current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
+            current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
+            current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
+          }
+          else {
+            current_point_exists[i] = false;
+          }
         }
         else {
-          current_point_exists = 0; // false
+          current_value = points_lows[i];
         }
-      }
-      if(quality > 12.5) {
-        quality = 12.5;
-      }
-      if(quality < 0) {
-        quality = 0;
+        if(current_value > points_highs[i]) {
+          current_value = points_highs[i];
+        }
+        if(current_value < points_lows[i]) {
+          current_value = points_lows[i];
+        }
+        quality += (current_value-points_lows[i])*points_multiples[i];
       }
       if(quality > 0) {
-        gdImageSetPixel(im, x, y, colors[(int)quality*8]);
+        gdImageSetPixel(im, x, y, colors[(int)quality]);
       }
     }
   }
   delete[] colors;
+  delete[] points_indexes;
+  delete[] current_point_exists;
+  delete[] points_lengths;
+  delete[] current_point_lats;
+  delete[] current_point_longs;
+  delete[] current_point_values;
+  delete[] points_multiples;
+  delete[] points_lows;
+  delete[] points_highs;
 
   int image_size = 1;
 
