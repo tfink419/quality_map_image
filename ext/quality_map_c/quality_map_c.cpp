@@ -224,10 +224,7 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
   if(RARRAY_LEN(north_east_int_ruby) != 2) {
     rb_raise(rb_eArgError, "%s", coord_error);
   }
-  Check_Type(points_ruby, T_ARRAY);
-  if(RARRAY_LEN(rb_ary_entry(points_ruby, 0)) != 5) {
-    rb_raise(rb_eArgError, "%s", outer_points_array_error);
-  }
+
 
 
   int south = NUM2INT(rb_ary_entry(south_west_int_ruby, 0));
@@ -235,12 +232,10 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
   int north = NUM2INT(rb_ary_entry(north_east_int_ruby, 0));
   int east = NUM2INT(rb_ary_entry(north_east_int_ruby, 1));
   int step_int = NUM2INT(step_int_ruby);
-
   int width = ((east-west)/step_int)+1;
   int height = ((north-south)/step_int)+1;
-
+  
   im = gdImageCreate(width, height);
-
 
   int* colors = new int[GRADIENT_MAP_SIZE];
 
@@ -249,8 +244,11 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
     colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[pos], GRADIENT_MAP[pos+1], GRADIENT_MAP[pos+2], ALPHA);
   }
 
+  Check_Type(points_ruby, T_ARRAY);
+
   long num_point_types = RARRAY_LEN(points_ruby);
   if(num_point_types) {
+
     VALUE point;
     long *points_indexes = new long[num_point_types];
     bool *current_point_exists = new bool[num_point_types];
@@ -263,6 +261,9 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
     bool *points_should_inverts = new bool[num_point_types];
     double *current_point_values = new double[num_point_types];
     for(long i = 0; i < num_point_types; i++) {
+      if(RARRAY_LEN(rb_ary_entry(points_ruby, i)) != 5) {
+        rb_raise(rb_eArgError, "%s", outer_points_array_error);
+      }
       points_indexes[i] = 0;
       points_lengths[i] = RARRAY_LEN(rb_ary_entry(rb_ary_entry(points_ruby, i),4));
       current_point_exists[i] = (points_lengths[i] > 0);
@@ -319,7 +320,6 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
         }
       }
     }
-    delete[] colors;
     delete[] points_indexes;
     delete[] current_point_exists;
     delete[] points_lengths;
@@ -331,6 +331,7 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
     delete[] points_lows;
     delete[] points_highs;
   }
+  delete[] colors;
 
   int image_size = 1;
 

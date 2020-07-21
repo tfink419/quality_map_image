@@ -13,6 +13,8 @@ BUILD_IMAGE_STEP = 1
 BUILD_IMAGE_POINTS = [[0, 12.5, 0.5, false, [[0, 0, 10], [1, 1, 10], [2, 2, 10], [3, 3, 10], [4, 4, 10]]],
 [0, 12.5, 0.5, true, [[0, 0, 12.5], [0, 1, 12.5], [0, 2, 12.5], [0, 3, 12.5], [1, 0, 12.5], [1, 1, 12.5], [1, 2, 12.5], [1, 4, 12.5], 
   [2, 0, 12.5], [2, 1, 12.5], [2, 3, 12.5], [2, 4, 12.5], [3, 0, 12.5], [3, 2, 12.5], [3, 3, 12.5], [3, 4, 12.5], [4, 1, 12.5], [4, 2, 12.5], [4, 3, 12.5], [4, 4, 12.5]]]]
+BUILD_IMAGE_POINTS_BLANK = []
+
 require 'quality_map_image'
 
 RSpec.describe QualityMapImage do
@@ -32,5 +34,11 @@ RSpec.describe QualityMapImage do
     test_response = subject.get_image(BUILD_IMAGE_SOUTHWEST, BUILD_IMAGE_NORTHEAST, BUILD_IMAGE_STEP, BUILD_IMAGE_POINTS)
     expect(test_response).to be_truthy
     File.write("test_image.png", test_response)
+  end
+
+  it "builds a 5x5 image with a red background" do
+    test_response = subject.get_image(BUILD_IMAGE_SOUTHWEST, BUILD_IMAGE_NORTHEAST, BUILD_IMAGE_STEP, BUILD_IMAGE_POINTS_BLANK)
+    expect(test_response).to be_truthy
+    File.write("test_image2.png", test_response)
   end
 end
