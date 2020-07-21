@@ -214,7 +214,7 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
   const char* coord_error =
     "Coordinates have format: [lat(int), long(int)]";
   const char* outer_points_array_error =
-    "Outer Points Array must have format: [range_low, range_high, multiple, points]";
+    "Outer Points Array must have format: [range_low, range_high, multiple, invert, points]";
 
   Check_Type(south_west_int_ruby, T_ARRAY);
   if(RARRAY_LEN(south_west_int_ruby) != 2) {
@@ -225,7 +225,7 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
     rb_raise(rb_eArgError, "%s", coord_error);
   }
   Check_Type(points_ruby, T_ARRAY);
-  if(RARRAY_LEN(rb_ary_entry(points_ruby, 0)) != 4) {
+  if(RARRAY_LEN(rb_ary_entry(points_ruby, 0)) != 5) {
     rb_raise(rb_eArgError, "%s", outer_points_array_error);
   }
 
@@ -250,79 +250,87 @@ static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_
   }
 
   long num_point_types = RARRAY_LEN(points_ruby);
-
-  VALUE point;
-  long *points_indexes = new long[num_point_types];
-  bool *current_point_exists = new bool[num_point_types];
-  long *points_lengths = new long[num_point_types];
-  int *current_point_lats = new int[num_point_types];
-  int *current_point_longs = new int[num_point_types];
-  double *points_lows = new double[num_point_types];
-  double *points_highs = new double[num_point_types];
-  double *points_multiples = new double[num_point_types];
-  double *current_point_values = new double[num_point_types];
-  for(long i = 0; i < num_point_types; i++) {
-    points_indexes[i] = 0;
-    points_lengths[i] = RARRAY_LEN(rb_ary_entry(rb_ary_entry(points_ruby, i),3));
-    current_point_exists[i] = (points_lengths[i] > 0);
-    points_lows[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 0));
-    points_highs[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 1));
-    points_multiples[i] = (GRADIENT_MAP_SIZE-1)/(points_highs[i]-points_lows[i])*NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 2));
-    if(current_point_exists[i]) {
-      point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 3),0);
-      checkPointArray(point);
-      current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
-      current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
-      current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
+  if(num_point_types) {
+    VALUE point;
+    long *points_indexes = new long[num_point_types];
+    bool *current_point_exists = new bool[num_point_types];
+    long *points_lengths = new long[num_point_types];
+    int *current_point_lats = new int[num_point_types];
+    int *current_point_longs = new int[num_point_types];
+    double *points_lows = new double[num_point_types];
+    double *points_highs = new double[num_point_types];
+    double *points_multiples = new double[num_point_types];
+    bool *points_should_inverts = new bool[num_point_types];
+    double *current_point_values = new double[num_point_types];
+    for(long i = 0; i < num_point_types; i++) {
+      points_indexes[i] = 0;
+      points_lengths[i] = RARRAY_LEN(rb_ary_entry(rb_ary_entry(points_ruby, i),4));
+      current_point_exists[i] = (points_lengths[i] > 0);
+      points_lows[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 0));
+      points_highs[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 1));
+      points_multiples[i] = (GRADIENT_MAP_SIZE-1)/(points_highs[i]-points_lows[i])*NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 2));
+      points_should_inverts[i] = rb_ary_entry(rb_ary_entry(points_ruby, i), 3) == Qtrue;
+      if(current_point_exists[i]) {
+        point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 4),0);
+        checkPointArray(point);
+        current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
+        current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
+        current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
+      }
     }
-  }
 
-  double quality, current_value;
-  long i, x, y, lat, lng;
-  // Iterate through coordinates, changing each pixel at that coordinate based on the point(s) there
-  for(lat = south, y = height-1; lat <= north; lat += step_int, y--) {
-    for(lng = west, x = 0; lng <= east; lng += step_int, x++) {
-      quality = 0;
-      for(i = 0; i < num_point_types; i++) {
-        if(current_point_exists[i] && current_point_lats[i] == lat && current_point_longs[i] == lng) {
-          current_value = current_point_values[i];
-          if(++points_indexes[i] < points_lengths[i]) {
-            point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 3), points_indexes[i]);
-            // checkPointArray(point); // Don't know how much this costs
-            current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
-            current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
-            current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
+    double quality, current_value;
+    long i, x, y, lat, lng;
+    // Iterate through coordinates, changing each pixel at that coordinate based on the point(s) there
+    for(lat = south, y = height-1; lat <= north; lat += step_int, y--) {
+      for(lng = west, x = 0; lng <= east; lng += step_int, x++) {
+        quality = 0;
+        for(i = 0; i < num_point_types; i++) {
+          if(current_point_exists[i] && current_point_lats[i] == lat && current_point_longs[i] == lng) {
+            current_value = current_point_values[i];
+            if(++points_indexes[i] < points_lengths[i]) {
+              point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 4), points_indexes[i]);
+              // checkPointArray(point); // Don't know how much this costs
+              current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
+              current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
+              current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
+            }
+            else {
+              current_point_exists[i] = false;
+            }
           }
           else {
-            current_point_exists[i] = false;
+            current_value = points_lows[i];
           }
+          if(current_value > points_highs[i]) {
+            current_value = points_highs[i];
+          }
+          if(current_value < points_lows[i]) {
+            current_value = points_lows[i];
+          }
+          current_value -= points_lows[i];
+          if(points_should_inverts[i]) {
+            current_value = (points_highs[i]-points_lows[i])-current_value;
+          }
+          quality += (current_value)*points_multiples[i];
         }
-        else {
-          current_value = points_lows[i];
+        if(quality > 0) {
+          gdImageSetPixel(im, x, y, colors[(int)quality]);
         }
-        if(current_value > points_highs[i]) {
-          current_value = points_highs[i];
-        }
-        if(current_value < points_lows[i]) {
-          current_value = points_lows[i];
-        }
-        quality += (current_value-points_lows[i])*points_multiples[i];
-      }
-      if(quality > 0) {
-        gdImageSetPixel(im, x, y, colors[(int)quality]);
       }
     }
+    delete[] colors;
+    delete[] points_indexes;
+    delete[] current_point_exists;
+    delete[] points_lengths;
+    delete[] current_point_lats;
+    delete[] current_point_longs;
+    delete[] current_point_values;
+    delete[] points_should_inverts;
+    delete[] points_multiples;
+    delete[] points_lows;
+    delete[] points_highs;
   }
-  delete[] colors;
-  delete[] points_indexes;
-  delete[] current_point_exists;
-  delete[] points_lengths;
-  delete[] current_point_lats;
-  delete[] current_point_longs;
-  delete[] current_point_values;
-  delete[] points_multiples;
-  delete[] points_lows;
-  delete[] points_highs;
 
   int image_size = 1;
 
