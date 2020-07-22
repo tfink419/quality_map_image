@@ -13,14 +13,12 @@
 #include "ruby/encoding.h"
 
 #include "gradient.hpp"
-#include "clipper.hpp"
 
 using namespace std;
-using namespace ClipperLib;
 
-#define MULTIPLY_CONST 1000000000
+#define MULTIPLY_CONST 10000000000
 #define COORD_MULTIPLE 1000
-#define MULTIPLE_DIFF  1000000
+#define MULTIPLE_DIFF  10000000
 
 
 extern "C" {
@@ -44,30 +42,92 @@ static double LogExpSum(double *values, long values_length, double log_exp) {
   return log(sum)/log(log_exp);
 }
 
-// Taken from ruby-clipper https://github.com/mieko/rbclipper/blob/master/ext/clipper/rbclipper.cpp
+int PointInPolygon(long long *point, long long *polygon, long polygon_vectors_length) {
+  int intersections = 0;
+  long num_values = polygon_vectors_length*4;
+  for(long ind = 0; ind < num_values; ind += 4) {
+    if ( ((polygon[ind+1]>point[1]) != (polygon[ind+3]>point[1])) &&
+     (point[0] < (polygon[ind+2]-polygon[ind]) * (point[1]-polygon[ind+1]) / (polygon[ind+3]-polygon[ind+1]) + polygon[ind]) ) {
+       intersections++;
+    }
+  }
+  return (intersections & 1) == 1;
+};
+
+// Adding all lines works perfectly fine for any number 
+// of polygons with or without holes when using line sweep
 static void
-ary_to_polygon(VALUE ary, ClipperLib::Path* poly)
+RubyPointArrayToCVectorArray(VALUE ary, long long **poly, long *length)
 {
+  *length = 0;
   const char* earg =
     "Paths have format: [[p0_x, p0_y], [p1_x, p1_y], ...]";
 
   Check_Type(ary, T_ARRAY);
+  long polygonsLength = RARRAY_LEN(ary);
 
-  long aryLength = RARRAY_LEN(ary);
+  VALUE first, last;
+  long long x1, x2, y1, y2;
 
-  for(long i = 0; i < aryLength; i++) {
-    VALUE sub = rb_ary_entry(ary, i);
-    Check_Type(sub, T_ARRAY);
+  long i, j, k, polygonLength, coordsLength;
 
-    if(RARRAY_LEN(sub) != 2) {
-      rb_raise(rb_eArgError, "%s", earg);
+  for(i = 0; i < polygonsLength; i++) {
+    Check_Type(rb_ary_entry(ary,i), T_ARRAY);
+    polygonLength = RARRAY_LEN(rb_ary_entry(ary,i));
+    for(j = 0; j < polygonLength; j++) {
+      Check_Type(rb_ary_entry(rb_ary_entry(ary,i),j), T_ARRAY);
+      coordsLength = RARRAY_LEN(rb_ary_entry(rb_ary_entry(ary,i),j));
+      first = rb_ary_entry(rb_ary_entry(rb_ary_entry(ary,i),j),0);
+      Check_Type(first, T_ARRAY);
+      if(RARRAY_LEN(first) != 2) {
+        rb_raise(rb_eArgError, "%s", earg);
+      }
+      last = rb_ary_entry(rb_ary_entry(rb_ary_entry(ary,i),j),0);
+      Check_Type(last, T_ARRAY);
+      if(RARRAY_LEN(last) != 2) {
+        rb_raise(rb_eArgError, "%s", earg);
+      }
+      x1 = NUM2DBL(rb_ary_entry(first, 0)) * MULTIPLY_CONST;
+      x2 = NUM2DBL(rb_ary_entry(last, 0)) * MULTIPLY_CONST;
+      y1 = NUM2DBL(rb_ary_entry(first, 1)) * MULTIPLY_CONST;
+      y2 = NUM2DBL(rb_ary_entry(last, 1)) * MULTIPLY_CONST;
+
+      // Make sure the first point is the last point
+      if(x1 != x2 || y1 != y2) {
+        rb_ary_push(rb_ary_entry(rb_ary_entry(ary,i),j), first);
+        coordsLength++;
+      }
+      *length += coordsLength-1;
     }
-
-    VALUE px = rb_ary_entry(sub, 0);
-    VALUE py = rb_ary_entry(sub, 1);
-
-    poly->push_back(IntPoint((long long)(NUM2DBL(px) * MULTIPLY_CONST), (long long)(NUM2DBL(py) * MULTIPLY_CONST)));
   }
+
+  *poly = new long long[(*length)*4];
+  long poly_ind = 0;
+  VALUE coord1, coord2;
+
+  for(long i = 0; i < polygonsLength; i++) {
+    polygonLength = RARRAY_LEN(rb_ary_entry(ary,i));
+    for(j = 0; j < polygonLength; j++) {
+      coordsLength = RARRAY_LEN(rb_ary_entry(rb_ary_entry(ary,i),j));
+      for(k = 1; k < coordsLength; k++) {
+        coord1 = rb_ary_entry(rb_ary_entry(rb_ary_entry(ary,i),j),k-1);
+        coord2 = rb_ary_entry(rb_ary_entry(rb_ary_entry(ary,i),j),k);
+        // Already checked coord1 in the first loop or previous iteration of this loop
+        Check_Type(coord2, T_ARRAY);
+        if(RARRAY_LEN(coord2) != 2) {
+          rb_raise(rb_eArgError, "%s", earg);
+        }
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 0)) * MULTIPLY_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 1)) * MULTIPLY_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 0)) * MULTIPLY_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 1)) * MULTIPLY_CONST;
+      }
+    }
+  }
+
+
+  // TODO: Sort vectors by lowest x position so 
+  // the sweeping algorithm can stop when it gets to the points x
 }
 
 static void checkPointArray(VALUE point) {
@@ -81,11 +141,10 @@ static void checkPointArray(VALUE point) {
   }
 }
 
-long QualitiesOfPoint(long long &x, long long &y, double *&qualities, ClipperLib::Path *&clipper_polygons, VALUE &polygons, long &polygons_length, VALUE ids) {
+long QualitiesOfPoint(long long point[2], double *&qualities, long long **&polygons_as_vectors, long *&polygons_vectors_lengths, VALUE &polygons, long &polygons_length, VALUE ids) {
   long num_qualities = 0;
-  IntPoint intPoint = IntPoint(x, y);
   for(long i = 0; i < polygons_length; i++) {
-    if(PointInPolygon(intPoint, clipper_polygons[i])) {
+    if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
       qualities[num_qualities++] = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
       if(ids) {
         rb_ary_push(ids, rb_ary_entry(rb_ary_entry(polygons, i),2));
@@ -118,26 +177,32 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
     case QualityLogExpSum:
       qualities = new double[polygons_length];
       break;
+    default:
+      break;
   }
-  ClipperLib::Path *clipper_polygons = new ClipperLib::Path[polygons_length];
+  // Structure of Pointer
+  // Polygons ->
+  // Vectors -> x1, y1, x2, y2, x1, y1, x2, y2...
+  long long **polygons_as_vectors = new long long *[polygons_length];
+  long *polygons_vectors_lengths = new long[polygons_length];
 
   for(long i = 0; i < polygons_length; i++) {
-    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipper_polygons+i);
+    RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
   }
-  long long x;
-  
-  for(; y <= lat_end; y += MULTIPLE_DIFF) {
-    for(x = x_start; x <= lng_end; x += MULTIPLE_DIFF) {
+  long long point[2] = {0, y};
+
+  for(; point[1] <= lat_end; point[1] += MULTIPLE_DIFF) {
+    for(point[0] = x_start; point[0] <= lng_end; point[0] += MULTIPLE_DIFF) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
-          long num_qualities = QualitiesOfPoint(x, y, qualities, clipper_polygons, polygons, polygons_length, NULL);
+          long num_qualities = QualitiesOfPoint(point, qualities, polygons_as_vectors, polygons_vectors_lengths, polygons, polygons_length, NULL);
           rb_ary_push(point_qualities, DBL2NUM(LogExpSum(qualities, num_qualities, quality_calc_value)));
           break;
         }
         case QualityFirst:
           for(long i = 0; i < polygons_length; i++) {
-            if(PointInPolygon(IntPoint(x, y), clipper_polygons[i])) {
+            if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
               rb_ary_push(point_qualities, rb_ary_entry(rb_ary_entry(polygons, i),1));
               break;
             }
@@ -153,15 +218,20 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
     case QualityLogExpSum:
       delete[] qualities;
       break;
+    default:
+      break;
   }
-  delete[] clipper_polygons;
+  for(long i = 0; i < polygons_length; i++) {
+    delete[] polygons_as_vectors[i];
+  }
+  delete[] polygons_as_vectors;
+  delete[] polygons_vectors_lengths;
   return point_qualities;
 }
 
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long long x = ((long long)NUM2INT(lng))*MULTIPLE_DIFF;
-  long long y = ((long long)NUM2INT(lat))*MULTIPLE_DIFF;
+  long long point[2] = { ((long long)NUM2INT(lng))*MULTIPLE_DIFF, ((long long)NUM2INT(lat))*MULTIPLE_DIFF };
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
   double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
 
@@ -172,25 +242,28 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
     case QualityLogExpSum:
       qualities = new double[polygons_length];
       break;
+    default:
+      break;
   }
   VALUE ids = rb_ary_new();
-  ClipperLib::Path *clipper_polygons = new ClipperLib::Path[polygons_length];
+  long long **polygons_as_vectors = new long long *[polygons_length];
+  long *polygons_vectors_lengths = new long[polygons_length];
 
   for(long i = 0; i < polygons_length; i++) {
-    ary_to_polygon(rb_ary_entry(rb_ary_entry(polygons, i),0), clipper_polygons+i);
+    RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
   }
 
   double quality = NULL;
   switch(quality_calc_method) {
     case QualityLogExpSum:
     {
-      long num_qualities = QualitiesOfPoint(x, y, qualities, clipper_polygons, polygons, polygons_length, ids);
+      long num_qualities = QualitiesOfPoint(point, qualities, polygons_as_vectors, polygons_vectors_lengths, polygons, polygons_length, ids);
       quality = LogExpSum(qualities, num_qualities, quality_calc_value);
       break;
     }
     case QualityFirst:
       for(long i = 0; i < polygons_length; i++) {
-        if(PointInPolygon(IntPoint(x, y), clipper_polygons[i])) {
+        if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
           quality = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
           rb_ary_push(ids, rb_ary_entry(rb_ary_entry(polygons, i),2));
           break;
@@ -205,8 +278,14 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
     case QualityLogExpSum:
       delete[] qualities;
       break;
+    default:
+      break;
   }
-  delete[] clipper_polygons;
+  for(long i = 0; i < polygons_length; i++) {
+    delete[] polygons_as_vectors[i];
+  }
+  delete[] polygons_as_vectors;
+  delete[] polygons_vectors_lengths;
   return rb_ary_new_from_args(2, DBL2NUM(quality), ids);
 }
 
