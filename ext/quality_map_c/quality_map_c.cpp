@@ -44,10 +44,12 @@ static double LogExpSum(double *values, long values_length, double log_exp) {
 
 int PointInPolygon(long long *point, long long *polygon, long polygon_vectors_length) {
   int intersections = 0;
+  long long x = point[0]+1; // These only work cause of the multiply scale
+  long long y = point[1]+1;
   long num_values = polygon_vectors_length*4;
   for(long ind = 0; ind < num_values; ind += 4) {
-    if ( ((polygon[ind+1]>point[1]) != (polygon[ind+3]>point[1])) &&
-     (point[0] < (polygon[ind+2]-polygon[ind]) * (point[1]-polygon[ind+1]) / (polygon[ind+3]-polygon[ind+1]) + polygon[ind]) ) {
+    if ( ((polygon[ind+1]>y) != (polygon[ind+3]>y)) &&
+     (x < (polygon[ind+2]-polygon[ind]) * (y-polygon[ind+1]) / (polygon[ind+3]-polygon[ind+1]) + polygon[ind]) ) {
        intersections++;
     }
   }
