@@ -16,9 +16,9 @@
 
 using namespace std;
 
-#define MULTIPLY_CONST 10000000000
+#define MULTIPLY_CONST 10000000
 #define COORD_MULTIPLE 1000
-#define MULTIPLE_DIFF  10000000
+#define MULTIPLE_DIFF  10000
 
 
 extern "C" {
@@ -42,7 +42,7 @@ static double LogExpSum(double *values, long values_length, double log_exp) {
   return log(sum)/log(log_exp);
 }
 
-int PointInPolygon(long long *point, long long *polygon, long polygon_vectors_length) {
+int PointInPolygon(long *point, long *polygon, long polygon_vectors_length) {
   int intersections = 0;
   long num_values = polygon_vectors_length*4;
   for(long ind = 0; ind < num_values; ind += 4) {
@@ -57,7 +57,7 @@ int PointInPolygon(long long *point, long long *polygon, long polygon_vectors_le
 // Adding all lines works perfectly fine for any number 
 // of polygons with or without holes when using line sweep
 static void
-RubyPointArrayToCVectorArray(VALUE ary, long long **poly, long *length)
+RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length)
 {
   *length = 0;
   const char* earg =
@@ -67,7 +67,7 @@ RubyPointArrayToCVectorArray(VALUE ary, long long **poly, long *length)
   long polygonsLength = RARRAY_LEN(ary);
 
   VALUE first, last;
-  long long x1, x2, y1, y2;
+  long x1, x2, y1, y2;
 
   long i, j, k, polygonLength, coordsLength;
 
@@ -101,7 +101,7 @@ RubyPointArrayToCVectorArray(VALUE ary, long long **poly, long *length)
     }
   }
 
-  *poly = new long long[(*length)*4];
+  *poly = new long[(*length)*4];
   long poly_ind = 0;
   VALUE coord1, coord2;
 
@@ -141,7 +141,7 @@ static void checkPointArray(VALUE point) {
   }
 }
 
-long QualitiesOfPoint(long long point[2], double *&qualities, long long **&polygons_as_vectors, long *&polygons_vectors_lengths, VALUE &polygons, long &polygons_length, VALUE ids) {
+long QualitiesOfPoint(long point[2], double *&qualities, long **&polygons_as_vectors, long *&polygons_vectors_lengths, VALUE &polygons, long &polygons_length, VALUE ids) {
   long num_qualities = 0;
   for(long i = 0; i < polygons_length; i++) {
     if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
@@ -158,13 +158,13 @@ long QualitiesOfPoint(long long point[2], double *&qualities, long long **&polyg
 static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start, 
   VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long long x_start = ((long long)NUM2INT(lng_start))*MULTIPLE_DIFF;
-  long long y_start = ((long long)NUM2INT(lat_start))*MULTIPLE_DIFF;
+  long x_start = ((long)NUM2INT(lng_start))*MULTIPLE_DIFF;
+  long y_start = ((long)NUM2INT(lat_start))*MULTIPLE_DIFF;
 
   long lat_range = NUM2INT(lat_range_ruby), lng_range = NUM2INT(lng_range_ruby);
 
-  long long lng_end = ((long long)lng_range*MULTIPLE_DIFF)+x_start-MULTIPLE_DIFF;
-  long long lat_end = ((long long)lat_range*MULTIPLE_DIFF)+y_start-MULTIPLE_DIFF;
+  long lng_end = ((long)lng_range*MULTIPLE_DIFF)+x_start-MULTIPLE_DIFF;
+  long lat_end = ((long)lat_range*MULTIPLE_DIFF)+y_start-MULTIPLE_DIFF;
   long polygons_length = RARRAY_LEN(polygons);
 
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
@@ -183,14 +183,14 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
   // Structure of Pointer
   // Polygons ->
   // Vectors -> x1, y1, x2, y2, x1, y1, x2, y2...
-  long long **polygons_as_vectors = new long long *[polygons_length];
+  long **polygons_as_vectors = new long *[polygons_length];
   long *polygons_vectors_lengths = new long[polygons_length];
 
   for(long i = 0; i < polygons_length; i++) {
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
   }
 
-  for(long long point[2] = {0, y_start}; point[1] <= lat_end; point[1] += MULTIPLE_DIFF) {
+  for(long point[2] = {0, y_start}; point[1] <= lat_end; point[1] += MULTIPLE_DIFF) {
     for(point[0] = x_start; point[0] <= lng_end; point[0] += MULTIPLE_DIFF) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
@@ -237,7 +237,7 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
 
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long long point[2] = { ((long long)NUM2INT(lng))*MULTIPLE_DIFF, ((long long)NUM2INT(lat))*MULTIPLE_DIFF };
+  long point[2] = { ((long)NUM2INT(lng))*MULTIPLE_DIFF, ((long)NUM2INT(lat))*MULTIPLE_DIFF };
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
   double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
 
@@ -252,7 +252,7 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
       break;
   }
   VALUE ids = rb_ary_new();
-  long long **polygons_as_vectors = new long long *[polygons_length];
+  long **polygons_as_vectors = new long *[polygons_length];
   long *polygons_vectors_lengths = new long[polygons_length];
 
   for(long i = 0; i < polygons_length; i++) {
