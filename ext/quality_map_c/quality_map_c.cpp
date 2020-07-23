@@ -44,12 +44,10 @@ static double LogExpSum(double *values, long values_length, double log_exp) {
 
 int PointInPolygon(long long *point, long long *polygon, long polygon_vectors_length) {
   int intersections = 0;
-  long long x = point[0]+1; // These only work cause of the multiply scale
-  long long y = point[1]+1;
   long num_values = polygon_vectors_length*4;
   for(long ind = 0; ind < num_values; ind += 4) {
-    if ( ((polygon[ind+1]>y) != (polygon[ind+3]>y)) &&
-     (x < (polygon[ind+2]-polygon[ind]) * (y-polygon[ind+1]) / (polygon[ind+3]-polygon[ind+1]) + polygon[ind]) ) {
+    if ( ((polygon[ind+1]>point[1]) != (polygon[ind+3]>point[1])) &&
+     (point[0] < (polygon[ind+2]-polygon[ind]) * (point[1]-polygon[ind+1]) / (polygon[ind+3]-polygon[ind+1]) + polygon[ind]) ) {
        intersections++;
     }
   }
@@ -161,12 +159,12 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
   VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
   long long x_start = ((long long)NUM2INT(lng_start))*MULTIPLE_DIFF;
-  long long y = ((long long)NUM2INT(lat_start))*MULTIPLE_DIFF;
+  long long y_start = ((long long)NUM2INT(lat_start))*MULTIPLE_DIFF;
 
   long lat_range = NUM2INT(lat_range_ruby), lng_range = NUM2INT(lng_range_ruby);
 
   long long lng_end = ((long long)lng_range*MULTIPLE_DIFF)+x_start-MULTIPLE_DIFF;
-  long long lat_end = ((long long)lat_range*MULTIPLE_DIFF)+y-MULTIPLE_DIFF;
+  long long lat_end = ((long long)lat_range*MULTIPLE_DIFF)+y_start-MULTIPLE_DIFF;
   long polygons_length = RARRAY_LEN(polygons);
 
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
@@ -191,9 +189,8 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
   for(long i = 0; i < polygons_length; i++) {
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
   }
-  long long point[2] = {0, y};
 
-  for(; point[1] <= lat_end; point[1] += MULTIPLE_DIFF) {
+  for(long long point[2] = {0, y_start}; point[1] <= lat_end; point[1] += MULTIPLE_DIFF) {
     for(point[0] = x_start; point[0] <= lng_end; point[0] += MULTIPLE_DIFF) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
@@ -203,12 +200,19 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
           break;
         }
         case QualityFirst:
+        {
+          bool found = false;
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
               rb_ary_push(point_qualities, rb_ary_entry(rb_ary_entry(polygons, i),1));
+              found = true;
               break;
             }
           }
+          if(!found) {
+            rb_ary_push(point_qualities, INT2NUM(0));
+          }
+        }
           break;
         default:
           rb_raise(rb_eRuntimeError, "%s", "Unknown Calc Method Type Chosen");
@@ -255,7 +259,7 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
   }
 
-  double quality = NULL;
+  double quality = 0;
   switch(quality_calc_method) {
     case QualityLogExpSum:
     {

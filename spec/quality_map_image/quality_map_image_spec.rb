@@ -1,3 +1,6 @@
+require 'quality_map_image'
+require 'json'
+
 QUALITY_OF_POINT_LAT=0
 QUALITY_OF_POINT_LONG=0
 QUALITY_OF_POINT_POLYGONS=[
@@ -5,7 +8,6 @@ QUALITY_OF_POINT_POLYGONS=[
   [[[[[-2,-2], [-2, 2], [2, 2], [2, -2], [-2,-2]]]], 10, 2],
   [[[[[-3,-3], [-3, 3], [3, 3], [3, -3], [-3,-3]]]], 10, 3]
 ]
-QUALITY_OF_POINT_RESPONSE = [12.070399166401323, [1, 2, 3]]
 QUALITY_OF_POINT_POLYGONS_WITH_HOLE=[
   [[[[[-3,-3], [-3, 3], [3, 3], [3, -3], [-3,-3]], [[-1,-1], [-1, 1], [1, 1], [1, -1], [-1,-1]]]], 10, 1]
 ]
@@ -18,14 +20,23 @@ BUILD_IMAGE_POINTS = [[0, 12.5, 0.5, false, [[0, 0, 10], [1, 1, 10], [2, 2, 10],
   [2, 0, 12.5], [2, 1, 12.5], [2, 3, 12.5], [2, 4, 12.5], [3, 0, 12.5], [3, 2, 12.5], [3, 3, 12.5], [3, 4, 12.5], [4, 1, 12.5], [4, 2, 12.5], [4, 3, 12.5], [4, 4, 12.5]]]]
 BUILD_IMAGE_POINTS_BLANK = []
 
-require 'quality_map_image'
+QUALITY_OF_POINTS_CENSUS_TRACT_LAT = 36.9*1000
+QUALITY_OF_POINTS_CENSUS_TRACT_LONG = -102.8*1000
+QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT = 100
+puts File.basename(Dir.getwd)
+QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS = JSON.parse(File.read("spec/dumps/census_tract_polygon_dump"))
 
 RSpec.describe QualityMapImage do
   it "has a version number" do
     expect(subject::VERSION).not_to be nil
   end
 
-  it "gets the First quality of point and returns ids" do
+  it "should return 100x100 quality points" do
+    expect(subject.quality_of_points(QUALITY_OF_POINTS_CENSUS_TRACT_LAT, QUALITY_OF_POINTS_CENSUS_TRACT_LONG,
+    QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS, "First", 1).count).to eq(100*100)
+  end
+
+  it "gets the First quality of point and returns id" do
     expect(subject.quality_of_point(QUALITY_OF_POINT_LAT, QUALITY_OF_POINT_LONG, QUALITY_OF_POINT_POLYGONS, "First", 1)).to eq([10, [1]] )
   end
 

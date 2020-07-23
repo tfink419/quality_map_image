@@ -7,7 +7,6 @@ module QualityMapImage
     "First" => 1
   }
 
-
   def self.get_image(south_west_int, north_east_int, step_int, points)
     QualityMapC::Image.buildImage(south_west_int, north_east_int, step_int, points)
   end
