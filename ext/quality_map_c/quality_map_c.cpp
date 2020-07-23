@@ -47,7 +47,7 @@ int PointInPolygon(long *point, long *polygon, long polygon_vectors_length) {
   long num_values = polygon_vectors_length*4;
   for(long ind = 0; ind < num_values; ind += 4) {
     if ( ((polygon[ind+1]>point[1]) != (polygon[ind+3]>point[1])) &&
-     (point[0] < (polygon[ind+2]-polygon[ind]) * (point[1]-polygon[ind+1]) / (polygon[ind+3]-polygon[ind+1]) + polygon[ind]) ) {
+     (point[0] < ((long long) polygon[ind+2]-polygon[ind]) * ((long long)point[1]-polygon[ind+1]) / ((long long)polygon[ind+3]-polygon[ind+1]) + polygon[ind]) ) {
        intersections++;
     }
   }
