@@ -192,7 +192,7 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
   setjmp(png_jmpbuf(png_ptr));
   png_set_write_status_fn(png_ptr, NULL);
   png_set_IHDR(png_ptr, info_ptr, lng_range, lat_range,
-      16, PNG_COLOR_TYPE_GRAY, PNG_INTERLACE_NONE,
+      8, PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
       PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
   VALUE ruby_blob = rb_str_new2("");
   png_set_write_fn(png_ptr, &ruby_blob, user_write_data, NULL);
@@ -200,7 +200,7 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
   // png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
   png_write_info(png_ptr, info_ptr);
 
-  png_bytep row = new png_byte[lng_range*2];
+  png_bytep row = new png_byte[lng_range*4];
 
   // Structure of Pointer
   // Polygons ->
@@ -212,20 +212,24 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
   }
 
-  unsigned short value;
-  unsigned char low, high;
+  unsigned long value;
+  unsigned char red, green, blue, alpha;
 
   for(long point[2] = {0, lat_end}, x; point[1] >= lat_start; point[1] -= MULTIPLE_DIFF) {
-    for(point[0] = lng_start, x = 0; point[0] <= lng_end; point[0] += MULTIPLE_DIFF, x += 2) {
+    for(point[0] = lng_start, x = 0; point[0] <= lng_end; point[0] += MULTIPLE_DIFF, x += 4) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
           long num_qualities = QualitiesOfPoint(point, qualities, polygons_as_vectors, polygons_vectors_lengths, polygons, polygons_length, NULL);
           value = LogExpSum(qualities, num_qualities, quality_calc_value)*quality_scale;
-          low = value & 0xFF;
-          high = value >> 8;
-          row[x] = high;
-          row[x+1] = low;
+          red = (value >> 24) & 0xFF;
+          green = (value >> 16) & 0xFF;
+          blue = (value >> 8) & 0xFF;
+          alpha = value & 0xFF;
+          row[x] = red;
+          row[x+1] = green;
+          row[x+2] = blue;
+          row[x+3] = alpha;
           break;
         }
         case QualityFirst:
@@ -234,16 +238,20 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
               value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1))*quality_scale;
-              low = value & 0xFF;
-              high = value >> 8;
-              row[x] = high;
-              row[x+1] = low;
+              red = (value >> 24) & 0xFF;
+              green = (value >> 16) & 0xFF;
+              blue = (value >> 8) & 0xFF;
+              alpha = value & 0xFF;
+              row[x] = red;
+              row[x+1] = green;
+              row[x+2] = blue;
+              row[x+3] = alpha;
               found = true;
               break;
             }
           }
           if(!found) {
-            row[x] = row[x+1] = 0;
+            row[x] = row[x+1] = row[x+2] = row[x+3] = 0;
           }
         }
           break;
@@ -350,6 +358,7 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
   
   VipsImage **images_in = new VipsImage*[num_images];
   VipsImage *image_1, *image_2, *image_3;
+  VipsImage *bands[4];
   long range_low, range_high;
   double multiple, scale;
   bool invert;
@@ -359,6 +368,23 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
                     RSTRING_LEN(rb_ary_entry(images, i)),
                     &image_1, NULL))
       vips_error_exit( NULL );
+    for(long j = 0; j < 4; j++) {
+      if(vips_extract_band(image_1, bands+j, j, NULL))
+        vips_error_exit( NULL );
+      bands[j]->BandFmt = VIPS_FORMAT_UINT;
+      if(j < 3) {
+        if(vips_lshift_const1 (bands[j], &image_2, 8*(3-j), NULL))
+          vips_error_exit( NULL );
+        g_object_unref(bands[j]);
+        bands[j] = image_2;
+      }
+    }
+    g_object_unref(image_1);
+    if(vips_sum (bands, &image_1, 4, NULL))
+      vips_error_exit( NULL );
+    for(long j = 0; j < 4; j++)
+      g_object_unref(bands[j]);
+
     range_low = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 0));
     range_high = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 1));
     multiple = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 2));

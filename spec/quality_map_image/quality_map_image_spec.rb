@@ -16,11 +16,11 @@ QUALITY_OF_POINTS_CENSUS_TRACT_LAT = 36.9*1000
 QUALITY_OF_POINTS_CENSUS_TRACT_LONG = -102.8*1000
 QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT = 100
 QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS = JSON.parse(File.read("spec/dumps/census_tract_polygon_dump"))
-QUALITY_OF_POINTS_CENSUS_TRACT_SCALE = 650
+QUALITY_OF_POINTS_CENSUS_TRACT_SCALE = 42000000
 
 QUALITY_OF_POINTS_SQUARE_LAT = 0
 QUALITY_OF_POINTS_SQUARE_LONG = 0
-QUALITY_OF_POINTS_SQUARE_SCALE = 1000
+QUALITY_OF_POINTS_SQUARE_SCALE = 200000000
 QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT = 100
 QUALITY_OF_POINTS_SQUARE_POLYGONS = [
   [[[[[0,0], [0, 0.05], [0.05, 0.05], [0.05, 0], [0, 0]]]], 10]
@@ -59,11 +59,21 @@ RSpec.describe QualityMapImage do
 
   it "builds an image with a greenish square in the bottom left and a red squigle in the top right" do
     images = []
-    image_data = [[0, 10, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 30, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
+    image_data = [[0, 10, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 10, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
     images << File.read("test_image.png")
     images << File.read("test_image2.png")
     test_response = subject.get_image(100, images, image_data)
     expect(test_response).to be_truthy
     File.write("test_image3.png", test_response)
+  end
+
+  it "builds an image with a faded greenish square in the bottom left and a red-yellow squiggle in the top right" do
+    images = []
+    image_data = [[0, 40, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 40, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
+    images << File.read("test_image.png")
+    images << File.read("test_image2.png")
+    test_response = subject.get_image(100, images, image_data)
+    expect(test_response).to be_truthy
+    File.write("test_image4.png", test_response)
   end
 end
