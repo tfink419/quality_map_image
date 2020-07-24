@@ -349,18 +349,11 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
     rb_raise(rb_eRuntimeError, "%s", image_data_err);
   
   VipsImage **images_in = new VipsImage*[num_images];
-  VipsImage *image_1, *image_2, *image_3, *high_image, *low_image, *two_image;
+  VipsImage *image_1, *image_2, *image_3;
   long range_low, range_high;
   double multiple, scale;
   bool invert;
 
-  double *big_useless_array = new double[full_size];
-  for(long j = 0; j < full_size; j++) {
-    big_useless_array[j] = 2.0;
-  }
-  two_image = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
-  if(!two_image)
-      vips_error_exit( NULL );
   for(long i = 0; i < num_images; i++) {
     if(vips_pngload_buffer (RSTRING_PTR(rb_ary_entry(images, i)),
                     RSTRING_LEN(rb_ary_entry(images, i)),
@@ -373,99 +366,59 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
     scale = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 3));
     invert = rb_ary_entry(rb_ary_entry(image_data, i), 4) == Qtrue;
 
-    // Divide by scale
-    for(long j = 0; j < full_size; j++) {
-      big_useless_array[j] = scale;
-    }
-    image_3 = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
-    if(!image_3)
+    // num = num*1/scale - low
+    if(vips_linear1(image_1, &image_2, 1/scale, 0-range_low, NULL))
       vips_error_exit( NULL );
-
-    if(vips_divide (image_1, image_3, &image_2, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_3);
     g_object_unref(image_1);
-
-    for(long j = 0; j < full_size; j++) {
-      big_useless_array[j] = range_low;
-    }
-    low_image = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
-    if(!low_image)
-      vips_error_exit( NULL );
-    // num = num - low
-    if(vips_subtract (image_2, low_image, &image_3, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_2);
 
     // num = (num.abs+num)/2
-    if(vips_abs (image_3, &image_1, NULL))
+    if(vips_abs (image_1, &image_2, NULL))
       vips_error_exit( NULL );
-    if(vips_add (image_1, image_3, &image_2, NULL))
+    if(vips_add (image_1, image_2, &image_3, NULL))
       vips_error_exit( NULL );
     g_object_unref(image_1);
-    g_object_unref(image_3);
-    if(vips_divide (image_2, two_image, &image_1, NULL))
-      vips_error_exit( NULL );
     g_object_unref(image_2);
+    if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_3);
 
     // num = high-low-num
-    for(long j = 0; j < full_size; j++) {
-      big_useless_array[j] = range_high;
-    }
-    high_image = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
-    if(!high_image)
+    if(vips_linear1(image_1, &image_2, -1, range_high-range_low, NULL))
       vips_error_exit( NULL );
-    if(vips_subtract (high_image, low_image, &image_2, NULL))
-      vips_error_exit( NULL );
-    if(vips_subtract (image_2, image_1, &image_3, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_2);
     g_object_unref(image_1);
 
     // num = (num.abs+num)/2
-    if(vips_abs (image_3, &image_1, NULL))
+    if(vips_abs (image_2, &image_1, NULL))
       vips_error_exit( NULL );
-    if(vips_add (image_1, image_3, &image_2, NULL))
+    if(vips_add (image_1, image_2, &image_3, NULL))
       vips_error_exit( NULL );
     g_object_unref(image_1);
-    g_object_unref(image_3);
-    if(vips_divide (image_2, two_image, &image_1, NULL))
-      vips_error_exit( NULL );
     g_object_unref(image_2);
+    if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_3);
+
     if(!invert) {
       // num = high-low-num
-      if(vips_subtract (high_image, low_image, &image_2, NULL))
-        vips_error_exit( NULL );
-      image_3 = image_1;
-      if(vips_subtract (image_2, image_3, &image_1, NULL))
+      if(vips_linear1(image_2, &image_1, -1, range_high-range_low, NULL))
         vips_error_exit( NULL );
       g_object_unref(image_2);
-      g_object_unref(image_3);
-    }
-    // Multiply by multiple
-    for(long j = 0; j < full_size; j++) {
-      big_useless_array[j] = multiple;
-    }
-    image_2 = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
-    if(vips_multiply (image_1, image_2, &image_3, NULL))
-      vips_error_exit( NULL );
+      image_2 = image_1;
+    } // else num was already inverted
 
-    // Round and cast to uchar
-    if(vips_round (image_3, &image_1, VIPS_OPERATION_ROUND_RINT, NULL))
+    // Multiply by multiple
+    if(vips_linear1(image_2, &image_1, multiple, 0, NULL))
       vips_error_exit( NULL );
-    g_object_unref(image_3);
-    
-    if(vips_cast_uchar(image_1, &image_2, NULL))
+    g_object_unref(image_2);
+
+    // Round and cast to uchar then save to the array
+    if(vips_round (image_1, &image_2, VIPS_OPERATION_ROUND_RINT, NULL))
       vips_error_exit( NULL );
     g_object_unref(image_1);
-
-    images_in[i] = image_2;
-
-    g_object_unref(high_image);
-    g_object_unref(low_image);
+    if(vips_cast_uchar(image_2, images_in+i, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_2);
   }
-  g_object_unref(two_image);
-  delete[] big_useless_array;
 
   if(vips_sum (images_in, &image_1, num_images, NULL))
     vips_error_exit( NULL );
@@ -488,7 +441,7 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
 
   void *pngPointer = NULL;
   size_t imageSize;
-  if( vips_pngsave_buffer(image_2, &pngPointer, &imageSize, "compression", 3, NULL) )
+  if( vips_pngsave_buffer(image_2, &pngPointer, &imageSize, NULL) )
     vips_error_exit( NULL );
   g_object_unref(image_2);
   
