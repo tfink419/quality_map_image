@@ -2,12 +2,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <iostream>
-#include "gd.h"
-#include "gdfontt.h"
-#include "gdfonts.h"
-#include "gdfontmb.h"
-#include "gdfontl.h"
-#include "gdfontg.h"
+#include <vips/vips.h>
+#include <png.h>
 
 #include "ruby/ruby.h"
 #include "ruby/encoding.h"
@@ -29,7 +25,6 @@ enum QualityCalcMethod {QualityLogExpSum = 0, QualityFirst = 1};
 const int ALPHA = 64;
 
 void *png_pointer = NULL;
-gdImagePtr im;
 
 static double LogExpSum(double *values, long values_length, double log_exp) {
   if(!values_length) {
@@ -154,23 +149,27 @@ long QualitiesOfPoint(long point[2], double *&qualities, long **&polygons_as_vec
   return num_qualities;
 }
 
+void user_write_data(png_structp png_ptr, png_bytep data, png_size_t length) {
+  VALUE * ruby_blob_p = (VALUE *) png_get_io_ptr(png_ptr);
+  rb_str_cat(*ruby_blob_p, (char *) data, length);
+}
+
 // quality_calc_method is an
-static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start, 
-  VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
+static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_start_ruby, 
+  VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_scale_ruby, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long x_start = ((long)NUM2INT(lng_start))*MULTIPLE_DIFF;
-  long y_start = ((long)NUM2INT(lat_start))*MULTIPLE_DIFF;
+  long lng_start = ((long)NUM2INT(lng_start_ruby))*MULTIPLE_DIFF;
+  long lat_start = ((long)NUM2INT(lat_start_ruby))*MULTIPLE_DIFF;
 
   long lat_range = NUM2INT(lat_range_ruby), lng_range = NUM2INT(lng_range_ruby);
 
-  long lng_end = ((long)lng_range*MULTIPLE_DIFF)+x_start-MULTIPLE_DIFF;
-  long lat_end = ((long)lat_range*MULTIPLE_DIFF)+y_start-MULTIPLE_DIFF;
+  long lng_end = ((long)lng_range*MULTIPLE_DIFF)+lng_start-MULTIPLE_DIFF;
+  long lat_end = ((long)lat_range*MULTIPLE_DIFF)+lat_start-MULTIPLE_DIFF;
   long polygons_length = RARRAY_LEN(polygons);
 
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
   double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
-
-  VALUE point_qualities = rb_ary_new2(lat_range*lng_range);
+  double quality_scale = NUM2DBL(quality_scale_ruby);
 
   double *qualities;
   switch(quality_calc_method) {
@@ -180,6 +179,29 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
     default:
       break;
   }
+
+  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  if(!png_ptr) rb_raise(rb_eRuntimeError, "%s", "Png Base structure failed to be created.");
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if(!info_ptr)
+  {
+    png_destroy_write_struct(&png_ptr,
+      (png_infopp)NULL);
+    rb_raise(rb_eRuntimeError, "%s", "Png Info structure failed to be created.");
+  }
+  setjmp(png_jmpbuf(png_ptr));
+  png_set_write_status_fn(png_ptr, NULL);
+  png_set_IHDR(png_ptr, info_ptr, lng_range, lat_range,
+      16, PNG_COLOR_TYPE_GRAY, PNG_INTERLACE_NONE,
+      PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+  VALUE ruby_blob = rb_str_new2("");
+  png_set_write_fn(png_ptr, &ruby_blob, user_write_data, NULL);
+  png_set_compression_level(png_ptr, 1); // Z_BEST_SPEED
+  // png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
+  png_write_info(png_ptr, info_ptr);
+
+  png_bytep row = new png_byte[lng_range*2];
+
   // Structure of Pointer
   // Polygons ->
   // Vectors -> x1, y1, x2, y2, x1, y1, x2, y2...
@@ -190,13 +212,20 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
   }
 
-  for(long point[2] = {0, y_start}; point[1] <= lat_end; point[1] += MULTIPLE_DIFF) {
-    for(point[0] = x_start; point[0] <= lng_end; point[0] += MULTIPLE_DIFF) {
+  unsigned short value;
+  unsigned char low, high;
+
+  for(long point[2] = {0, lat_end}, x; point[1] >= lat_start; point[1] -= MULTIPLE_DIFF) {
+    for(point[0] = lng_start, x = 0; point[0] <= lng_end; point[0] += MULTIPLE_DIFF, x += 2) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
           long num_qualities = QualitiesOfPoint(point, qualities, polygons_as_vectors, polygons_vectors_lengths, polygons, polygons_length, NULL);
-          rb_ary_push(point_qualities, DBL2NUM(LogExpSum(qualities, num_qualities, quality_calc_value)));
+          value = LogExpSum(qualities, num_qualities, quality_calc_value)*quality_scale;
+          high = value & 0xFF;
+          low = value >> 8;
+          row[x] = high;
+          row[x+1] = low;
           break;
         }
         case QualityFirst:
@@ -204,13 +233,17 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
           bool found = false;
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
-              rb_ary_push(point_qualities, rb_ary_entry(rb_ary_entry(polygons, i),1));
+              value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1))*quality_scale;
+              high = value & 0xFF;
+              low = value >> 8;
+              row[x] = high;
+              row[x+1] = low;
               found = true;
               break;
             }
           }
           if(!found) {
-            rb_ary_push(point_qualities, INT2NUM(0));
+            row[x] = row[x+1] = 0;
           }
         }
           break;
@@ -218,7 +251,11 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
           rb_raise(rb_eRuntimeError, "%s", "Unknown Calc Method Type Chosen");
       }
     }
+    png_write_row(png_ptr, row);
   }
+  png_write_end(png_ptr, info_ptr);
+  png_destroy_write_struct(&png_ptr, &info_ptr);
+  delete[] row;
 
   switch(quality_calc_method) {
     case QualityLogExpSum:
@@ -232,7 +269,7 @@ static VALUE qualityOfPoints(VALUE self, VALUE lat_start, VALUE lng_start,
   }
   delete[] polygons_as_vectors;
   delete[] polygons_vectors_lengths;
-  return point_qualities;
+  return ruby_blob;
 }
 
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
@@ -295,142 +332,170 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
   return rb_ary_new_from_args(2, DBL2NUM(quality), ids);
 }
 
-static VALUE buildImage(VALUE self, VALUE south_west_int_ruby, VALUE north_east_int_ruby, VALUE step_int_ruby, VALUE points_ruby) {
-  const char* coord_error =
-    "Coordinates have format: [lat(int), long(int)]";
-  const char* outer_points_array_error =
-    "Outer Points Array must have format: [range_low, range_high, multiple, invert, points]";
+static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_data) {
+  const char* image_data_err =
+    "Image Data Array must have format: [range_low, range_high, multiple, scale, invert]";
 
-  Check_Type(south_west_int_ruby, T_ARRAY);
-  if(RARRAY_LEN(south_west_int_ruby) != 2) {
-    rb_raise(rb_eArgError, "%s", coord_error);
-  }
-  Check_Type(north_east_int_ruby, T_ARRAY);
-  if(RARRAY_LEN(north_east_int_ruby) != 2) {
-    rb_raise(rb_eArgError, "%s", coord_error);
-  }
+  Check_Type(images, T_ARRAY);
+  Check_Type(image_data, T_ARRAY);
 
+  long num_images;
+  long size = NUM2INT(size_ruby);
+  long full_size = size*size;
 
+  if((num_images = RARRAY_LEN(images)) == 0) return rb_str_new2("");
 
-  int south = NUM2INT(rb_ary_entry(south_west_int_ruby, 0));
-  int west = NUM2INT(rb_ary_entry(south_west_int_ruby, 1));
-  int north = NUM2INT(rb_ary_entry(north_east_int_ruby, 0));
-  int east = NUM2INT(rb_ary_entry(north_east_int_ruby, 1));
-  int step_int = NUM2INT(step_int_ruby);
-  int width = ((east-west)/step_int)+1;
-  int height = ((north-south)/step_int)+1;
+  if(RARRAY_LEN(rb_ary_entry(image_data, 0)) != 5)
+    rb_raise(rb_eRuntimeError, "%s", image_data_err);
   
-  im = gdImageCreate(width, height);
+  VipsImage **images_in = new VipsImage*[num_images];
+  VipsImage *image_1, *image_2, *image_3, *high_image, *low_image, *two_image;
+  long range_low, range_high;
+  double multiple, scale;
+  bool invert;
 
-  int* colors = new int[GRADIENT_MAP_SIZE];
-
-  // The first color added is the background, it should be the quality 0 color
-  for(int i = 0, pos = 0; i < GRADIENT_MAP_SIZE; i++, pos+=3) {
-    colors[i] = gdImageColorAllocateAlpha(im, GRADIENT_MAP[pos], GRADIENT_MAP[pos+1], GRADIENT_MAP[pos+2], ALPHA);
+  double *big_useless_array = new double[full_size];
+  for(long j = 0; j < full_size; j++) {
+    big_useless_array[j] = 2.0;
   }
+  two_image = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
+  if(!two_image)
+      vips_error_exit( NULL );
+  for(long i = 0; i < num_images; i++) {
+    if(vips_pngload_buffer (RSTRING_PTR(rb_ary_entry(images, i)),
+                    RSTRING_LEN(rb_ary_entry(images, i)),
+                    &image_1, NULL))
+      vips_error_exit( NULL );
+    range_low = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 0));
+    range_high = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 1));
+    multiple = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 2));
+    multiple = (GRADIENT_MAP_SIZE-1)/(range_high-range_low)*multiple;
+    scale = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 3));
+    invert = rb_ary_entry(rb_ary_entry(image_data, i), 4) == Qtrue;
 
-  Check_Type(points_ruby, T_ARRAY);
-
-  long num_point_types = RARRAY_LEN(points_ruby);
-  if(num_point_types) {
-
-    VALUE point;
-    long *points_indexes = new long[num_point_types];
-    bool *current_point_exists = new bool[num_point_types];
-    long *points_lengths = new long[num_point_types];
-    int *current_point_lats = new int[num_point_types];
-    int *current_point_longs = new int[num_point_types];
-    double *points_lows = new double[num_point_types];
-    double *points_highs = new double[num_point_types];
-    double *points_multiples = new double[num_point_types];
-    bool *points_should_inverts = new bool[num_point_types];
-    double *current_point_values = new double[num_point_types];
-    for(long i = 0; i < num_point_types; i++) {
-      if(RARRAY_LEN(rb_ary_entry(points_ruby, i)) != 5) {
-        rb_raise(rb_eArgError, "%s", outer_points_array_error);
-      }
-      points_indexes[i] = 0;
-      points_lengths[i] = RARRAY_LEN(rb_ary_entry(rb_ary_entry(points_ruby, i),4));
-      current_point_exists[i] = (points_lengths[i] > 0);
-      points_lows[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 0));
-      points_highs[i] = NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 1));
-      points_multiples[i] = (GRADIENT_MAP_SIZE-1)/(points_highs[i]-points_lows[i])*NUM2DBL(rb_ary_entry(rb_ary_entry(points_ruby, i), 2));
-      points_should_inverts[i] = rb_ary_entry(rb_ary_entry(points_ruby, i), 3) == Qtrue;
-      if(current_point_exists[i]) {
-        point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 4),0);
-        checkPointArray(point);
-        current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
-        current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
-        current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
-      }
+    // Divide by scale
+    for(long j = 0; j < full_size; j++) {
+      big_useless_array[j] = scale;
     }
+    image_3 = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
+    if(!image_3)
+      vips_error_exit( NULL );
 
-    double quality, current_value;
-    long i, x, y, lat, lng;
-    // Iterate through coordinates, changing each pixel at that coordinate based on the point(s) there
-    for(lat = south, y = height-1; lat <= north; lat += step_int, y--) {
-      for(lng = west, x = 0; lng <= east; lng += step_int, x++) {
-        quality = 0;
-        for(i = 0; i < num_point_types; i++) {
-          if(current_point_exists[i] && current_point_lats[i] == lat && current_point_longs[i] == lng) {
-            current_value = current_point_values[i];
-            if(++points_indexes[i] < points_lengths[i]) {
-              point = rb_ary_entry(rb_ary_entry(rb_ary_entry(points_ruby, i), 4), points_indexes[i]);
-              // checkPointArray(point); // Don't know how much this costs
-              current_point_lats[i] = NUM2INT(rb_ary_entry(point, 0));
-              current_point_longs[i] = NUM2INT(rb_ary_entry(point, 1));
-              current_point_values[i] = NUM2DBL(rb_ary_entry(point, 2));
-            }
-            else {
-              current_point_exists[i] = false;
-            }
-          }
-          else {
-            current_value = points_lows[i];
-          }
-          if(current_value > points_highs[i]) {
-            current_value = points_highs[i];
-          }
-          if(current_value < points_lows[i]) {
-            current_value = points_lows[i];
-          }
-          current_value -= points_lows[i];
-          if(points_should_inverts[i]) {
-            current_value = (points_highs[i]-points_lows[i])-current_value;
-          }
-          quality += (current_value)*points_multiples[i];
-        }
-        if(quality > 0) {
-          gdImageSetPixel(im, x, y, colors[(int)quality]);
-        }
-      }
+    if(vips_divide (image_1, image_3, &image_2, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_3);
+    g_object_unref(image_1);
+
+    for(long j = 0; j < full_size; j++) {
+      big_useless_array[j] = range_low;
     }
-    delete[] points_indexes;
-    delete[] current_point_exists;
-    delete[] points_lengths;
-    delete[] current_point_lats;
-    delete[] current_point_longs;
-    delete[] current_point_values;
-    delete[] points_should_inverts;
-    delete[] points_multiples;
-    delete[] points_lows;
-    delete[] points_highs;
+    low_image = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
+    if(!low_image)
+      vips_error_exit( NULL );
+    // num = num - low
+    if(vips_subtract (image_2, low_image, &image_3, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_2);
+
+    // num = (num.abs+num)/2
+    if(vips_abs (image_3, &image_1, NULL))
+      vips_error_exit( NULL );
+    if(vips_add (image_1, image_3, &image_2, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_1);
+    g_object_unref(image_3);
+    if(vips_divide (image_2, two_image, &image_1, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_2);
+
+    // num = high-low-num
+    for(long j = 0; j < full_size; j++) {
+      big_useless_array[j] = range_high;
+    }
+    high_image = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
+    if(!high_image)
+      vips_error_exit( NULL );
+    if(vips_subtract (high_image, low_image, &image_2, NULL))
+      vips_error_exit( NULL );
+    if(vips_subtract (image_2, image_1, &image_3, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_2);
+    g_object_unref(image_1);
+
+    // num = (num.abs+num)/2
+    if(vips_abs (image_3, &image_1, NULL))
+      vips_error_exit( NULL );
+    if(vips_add (image_1, image_3, &image_2, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_1);
+    g_object_unref(image_3);
+    if(vips_divide (image_2, two_image, &image_1, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_2);
+    if(!invert) {
+      // num = high-low-num
+      if(vips_subtract (high_image, low_image, &image_2, NULL))
+        vips_error_exit( NULL );
+      image_3 = image_1;
+      if(vips_subtract (image_2, image_3, &image_1, NULL))
+        vips_error_exit( NULL );
+      g_object_unref(image_2);
+      g_object_unref(image_3);
+    }
+    // Multiply by multiple
+    for(long j = 0; j < full_size; j++) {
+      big_useless_array[j] = multiple;
+    }
+    image_2 = vips_image_new_matrix_from_array (size, size, big_useless_array, full_size);
+    if(vips_multiply (image_1, image_2, &image_3, NULL))
+      vips_error_exit( NULL );
+
+    // Round and cast to uchar
+    if(vips_round (image_3, &image_1, VIPS_OPERATION_ROUND_RINT, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_3);
+    
+    if(vips_cast_uchar(image_1, &image_2, NULL))
+      vips_error_exit( NULL );
+    g_object_unref(image_1);
+
+    images_in[i] = image_2;
+
+    g_object_unref(high_image);
+    g_object_unref(low_image);
   }
-  delete[] colors;
+  g_object_unref(two_image);
+  delete[] big_useless_array;
 
-  int image_size = 1;
+  if(vips_sum (images_in, &image_1, num_images, NULL))
+    vips_error_exit( NULL );
 
-  /* Generate a blob of the image */
-  png_pointer = gdImagePngPtr(im, &image_size);
-  gdImageDestroy(im);
-
-  fflush(stdout);
-  if(!png_pointer) {
-    rb_raise(rb_eRuntimeError, "%s", "Image blob creation failed.");
+  for(long i = 0; i < num_images; i++) {
+    g_object_unref( images_in[i] );
   }
-  VALUE ruby_blob = rb_str_new((char *)png_pointer, image_size);
-  gdFree(png_pointer);
-  return ruby_blob;
+  delete[] images_in;
+
+  VipsImage *lookup_table;
+
+  // False colorize
+  lookup_table = vips_image_new_from_memory( GRADIENT_MAP, GRADIENT_MAP_CHANNELS * GRADIENT_MAP_SIZE, GRADIENT_MAP_SIZE, 1, GRADIENT_MAP_CHANNELS, VIPS_FORMAT_UCHAR );
+  if(!lookup_table) vips_error_exit( NULL );
+  lookup_table->Type = VIPS_INTERPRETATION_sRGB;
+  if(vips_maplut (image_1, &image_2, lookup_table , NULL))
+    vips_error_exit( NULL );
+  g_object_unref(image_1);
+  g_object_unref(lookup_table);
+
+  void *pngPointer = NULL;
+  size_t imageSize;
+  if( vips_pngsave_buffer(image_2, &pngPointer, &imageSize, "compression", 3, NULL) )
+    vips_error_exit( NULL );
+  g_object_unref(image_2);
+  
+  VALUE stringRuby = rb_str_new((char *)pngPointer, imageSize);
+  g_free(pngPointer);
+  return stringRuby;
+  return Qtrue;
 }
 
 typedef VALUE (*ruby_method)(...);
@@ -440,10 +505,10 @@ void Init_quality_map_c(void) {
   VALUE Image = rb_define_class_under(QualityMapC, "Image", rb_cObject);
   VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
 
-  rb_define_singleton_method(Point, "qualityOfPoints", (ruby_method) qualityOfPoints, 7);
+  rb_define_singleton_method(Point, "qualityOfPointsImage", (ruby_method) qualityOfPointsImage, 8);
   rb_define_singleton_method(Point, "qualityOfPoint", (ruby_method) qualityOfPoint, 5);
 
-  rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 4);
+  rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 3);
 }
 
 } // extern "C"
