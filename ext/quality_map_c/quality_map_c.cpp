@@ -222,8 +222,8 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
         {
           long num_qualities = QualitiesOfPoint(point, qualities, polygons_as_vectors, polygons_vectors_lengths, polygons, polygons_length, NULL);
           value = LogExpSum(qualities, num_qualities, quality_calc_value)*quality_scale;
-          high = value & 0xFF;
-          low = value >> 8;
+          low = value & 0xFF;
+          high = value >> 8;
           row[x] = high;
           row[x+1] = low;
           break;
@@ -234,8 +234,8 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
               value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1))*quality_scale;
-              high = value & 0xFF;
-              low = value >> 8;
+              low = value & 0xFF;
+              high = value >> 8;
               row[x] = high;
               row[x+1] = low;
               found = true;
@@ -362,7 +362,7 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
     range_low = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 0));
     range_high = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 1));
     multiple = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 2));
-    multiple = (GRADIENT_MAP_SIZE-1)/(range_high-range_low)*multiple;
+    multiple = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*multiple;
     scale = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 3));
     invert = rb_ary_entry(rb_ary_entry(image_data, i), 4) == Qtrue;
 
@@ -372,7 +372,7 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
     g_object_unref(image_1);
 
     // num = (num.abs+num)/2
-    if(vips_abs (image_1, &image_2, NULL))
+    if(vips_abs (image_2, &image_1, NULL))
       vips_error_exit( NULL );
     if(vips_add (image_1, image_2, &image_3, NULL))
       vips_error_exit( NULL );
@@ -400,33 +400,34 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
 
     if(!invert) {
       // num = high-low-num
-      if(vips_linear1(image_2, &image_1, -1, range_high-range_low, NULL))
+      if(vips_linear1(image_1, &image_2, -1, range_high-range_low, NULL))
         vips_error_exit( NULL );
-      g_object_unref(image_2);
-      image_2 = image_1;
+      g_object_unref(image_1);
+      image_1 = image_2;
     } // else num was already inverted
 
-    // Multiply by multiple
-    if(vips_linear1(image_2, &image_1, multiple, 0, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_2);
-
-    // Round and cast to uchar then save to the array
-    if(vips_round (image_1, &image_2, VIPS_OPERATION_ROUND_RINT, NULL))
+    // Multiply by multiple and save to array
+    if(vips_linear1(image_1, images_in+i, multiple, 0, NULL))
       vips_error_exit( NULL );
     g_object_unref(image_1);
-    if(vips_cast_uchar(image_2, images_in+i, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_2);
   }
 
+  // Sum together all those images
   if(vips_sum (images_in, &image_1, num_images, NULL))
     vips_error_exit( NULL );
-
   for(long i = 0; i < num_images; i++) {
     g_object_unref( images_in[i] );
   }
   delete[] images_in;
+
+  // Round and cast to uchar
+  if(vips_round (image_1, &image_2, VIPS_OPERATION_ROUND_RINT, NULL))
+    vips_error_exit( NULL );
+  g_object_unref(image_1);
+  if(vips_cast_uchar(image_2, &image_1, NULL))
+    vips_error_exit( NULL );
+  g_object_unref(image_2);
+
 
   VipsImage *lookup_table;
 

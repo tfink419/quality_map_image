@@ -16,12 +16,13 @@ QUALITY_OF_POINTS_CENSUS_TRACT_LAT = 36.9*1000
 QUALITY_OF_POINTS_CENSUS_TRACT_LONG = -102.8*1000
 QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT = 100
 QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS = JSON.parse(File.read("spec/dumps/census_tract_polygon_dump"))
+QUALITY_OF_POINTS_CENSUS_TRACT_SCALE = 650
 
-QUALITY_OF_POINTS_SMOL_LAT = 0
-QUALITY_OF_POINTS_SMOL_LONG = 0
-QUALITY_OF_POINTS_SMOL_SCALE = 1000
-QUALITY_OF_POINTS_SMOL_WIDTH_HEIGHT = 100
-QUALITY_OF_POINTS_SMOL_POLYGONS = [
+QUALITY_OF_POINTS_SQUARE_LAT = 0
+QUALITY_OF_POINTS_SQUARE_LONG = 0
+QUALITY_OF_POINTS_SQUARE_SCALE = 1000
+QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT = 100
+QUALITY_OF_POINTS_SQUARE_POLYGONS = [
   [[[[[0,0], [0, 0.05], [0.05, 0.05], [0.05, 0], [0, 0]]]], 10]
 ]
 
@@ -32,14 +33,14 @@ RSpec.describe QualityMapImage do
 
   it "should return an image representing the data" do
     test_response = subject.quality_of_points_image(QUALITY_OF_POINTS_CENSUS_TRACT_LAT, QUALITY_OF_POINTS_CENSUS_TRACT_LONG,
-    QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS, 100, "First", 1)
+    QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, "First", 1)
     expect(test_response).to be_truthy
     File.write("test_image.png", test_response)
   end
 
-  it "should return a smol image representing the data" do
-    test_response = subject.quality_of_points_image(QUALITY_OF_POINTS_SMOL_LAT, QUALITY_OF_POINTS_SMOL_LONG,
-    QUALITY_OF_POINTS_SMOL_WIDTH_HEIGHT, QUALITY_OF_POINTS_SMOL_WIDTH_HEIGHT, QUALITY_OF_POINTS_SMOL_POLYGONS, QUALITY_OF_POINTS_SMOL_SCALE, "First", 1)
+  it "should return an image with a little square in the bottom left" do
+    test_response = subject.quality_of_points_image(QUALITY_OF_POINTS_SQUARE_LAT, QUALITY_OF_POINTS_SQUARE_LONG,
+    QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT, QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT, QUALITY_OF_POINTS_SQUARE_POLYGONS, QUALITY_OF_POINTS_SQUARE_SCALE, "First", 1)
     expect(test_response).to be_truthy
     File.write("test_image2.png", test_response)
   end
@@ -56,9 +57,9 @@ RSpec.describe QualityMapImage do
     expect(subject.quality_of_point(QUALITY_OF_POINT_LAT, QUALITY_OF_POINT_LONG, QUALITY_OF_POINT_POLYGONS_WITH_HOLE, "First", 1)).to eq([0, []] )
   end
 
-  it "builds an image from the 2 test images" do
+  it "builds an image with a greenish square in the bottom left and a red squigle in the top right" do
     images = []
-    image_data = [[5, 40, 0.5, 100, true], [0, 10, 0.5, 1000, false]]
+    image_data = [[0, 10, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 30, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
     images << File.read("test_image.png")
     images << File.read("test_image2.png")
     test_response = subject.get_image(100, images, image_data)
