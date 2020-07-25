@@ -12,9 +12,10 @@
 
 using namespace std;
 
-#define MULTIPLY_CONST 10000000
-#define COORD_MULTIPLE 1000
-#define MULTIPLE_DIFF  10000
+#define MULTIPLY_CONST 524288 // 2 ^ 19
+#define DIVIDE_CONST 180.0
+// #define COORD_MULTIPLE 1048576 // 20 ^ 20
+// #define MULTIPLE_DIFF  1024
 
 
 extern "C" {
@@ -62,7 +63,7 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length)
   long polygonsLength = RARRAY_LEN(ary);
 
   VALUE first, last;
-  long x1, x2, y1, y2;
+  double x1, x2, y1, y2;
 
   long i, j, k, polygonLength, coordsLength;
 
@@ -82,10 +83,10 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length)
       if(RARRAY_LEN(last) != 2) {
         rb_raise(rb_eArgError, "%s", earg);
       }
-      x1 = NUM2DBL(rb_ary_entry(first, 0)) * MULTIPLY_CONST;
-      x2 = NUM2DBL(rb_ary_entry(last, 0)) * MULTIPLY_CONST;
-      y1 = NUM2DBL(rb_ary_entry(first, 1)) * MULTIPLY_CONST;
-      y2 = NUM2DBL(rb_ary_entry(last, 1)) * MULTIPLY_CONST;
+      x1 = NUM2DBL(rb_ary_entry(first, 0));
+      x2 = NUM2DBL(rb_ary_entry(last, 0));
+      y1 = NUM2DBL(rb_ary_entry(first, 1));
+      y2 = NUM2DBL(rb_ary_entry(last, 1));
 
       // Make sure the first point is the last point
       if(x1 != x2 || y1 != y2) {
@@ -112,10 +113,10 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length)
         if(RARRAY_LEN(coord2) != 2) {
           rb_raise(rb_eArgError, "%s", earg);
         }
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 0)) * MULTIPLY_CONST;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 1)) * MULTIPLY_CONST;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 0)) * MULTIPLY_CONST;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 1)) * MULTIPLY_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 0)) * MULTIPLY_CONST / DIVIDE_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 1)) * MULTIPLY_CONST / DIVIDE_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 0)) * MULTIPLY_CONST / DIVIDE_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 1)) * MULTIPLY_CONST / DIVIDE_CONST;
       }
     }
   }
@@ -158,13 +159,13 @@ void user_write_data(png_structp png_ptr, png_bytep data, png_size_t length) {
 static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_start_ruby, 
   VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_scale_ruby, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long lng_start = ((long)NUM2INT(lng_start_ruby))*MULTIPLE_DIFF;
-  long lat_start = ((long)NUM2INT(lat_start_ruby))*MULTIPLE_DIFF;
+  long lng_start = (long)NUM2INT(lng_start_ruby);
+  long lat_start = (long)NUM2INT(lat_start_ruby);
 
   long lat_range = NUM2INT(lat_range_ruby), lng_range = NUM2INT(lng_range_ruby);
 
-  long lng_end = ((long)lng_range*MULTIPLE_DIFF)+lng_start-MULTIPLE_DIFF;
-  long lat_end = ((long)lat_range*MULTIPLE_DIFF)+lat_start-MULTIPLE_DIFF;
+  long lng_end = lng_range+lng_start-1;
+  long lat_end = lat_range+lat_start-1;
   long polygons_length = RARRAY_LEN(polygons);
 
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
@@ -215,8 +216,8 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
   unsigned long value;
   unsigned char red, green, blue, alpha;
 
-  for(long point[2] = {0, lat_end}, x; point[1] >= lat_start; point[1] -= MULTIPLE_DIFF) {
-    for(point[0] = lng_start, x = 0; point[0] <= lng_end; point[0] += MULTIPLE_DIFF, x += 4) {
+  for(long point[2] = {0, lat_end}, x; point[1] >= lat_start; point[1]--) {
+    for(point[0] = lng_start, x = 0; point[0] <= lng_end; point[0]++, x += 4) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
@@ -282,7 +283,7 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
 
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long point[2] = { ((long)NUM2INT(lng))*MULTIPLE_DIFF, ((long)NUM2INT(lat))*MULTIPLE_DIFF };
+  long point[2] = { NUM2INT(lng)*MULTIPLY_CONST/DIVIDE_CONST, ((long)NUM2INT(lat))*MULTIPLY_CONST/DIVIDE_CONST };
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
   double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
 
