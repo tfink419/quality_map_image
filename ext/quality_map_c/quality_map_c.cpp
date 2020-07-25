@@ -12,10 +12,7 @@
 
 using namespace std;
 
-#define MULTIPLY_CONST 524288 // 2 ^ 19
-#define DIVIDE_CONST 180.0
-// #define COORD_MULTIPLE 1048576 // 20 ^ 20
-// #define MULTIPLE_DIFF  1024
+#define DEFAULT_MULTIPLY_CONST 1048576 // 2 ^ 19
 
 
 extern "C" {
@@ -53,7 +50,7 @@ int PointInPolygon(long *point, long *polygon, long polygon_vectors_length) {
 // Adding all lines works perfectly fine for any number 
 // of polygons with or without holes when using line sweep
 static void
-RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length)
+RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length, double multiply_const)
 {
   *length = 0;
   const char* earg =
@@ -113,10 +110,10 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length)
         if(RARRAY_LEN(coord2) != 2) {
           rb_raise(rb_eArgError, "%s", earg);
         }
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 0)) * MULTIPLY_CONST / DIVIDE_CONST;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 1)) * MULTIPLY_CONST / DIVIDE_CONST;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 0)) * MULTIPLY_CONST / DIVIDE_CONST;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 1)) * MULTIPLY_CONST / DIVIDE_CONST;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 0)) * multiply_const;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 1)) * multiply_const;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 0)) * multiply_const;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 1)) * multiply_const;
       }
     }
   }
@@ -156,11 +153,12 @@ void user_write_data(png_structp png_ptr, png_bytep data, png_size_t length) {
 }
 
 // quality_calc_method is an
-static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_start_ruby, 
+static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE lat_start_ruby, VALUE lng_start_ruby, 
   VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_scale_ruby, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long lng_start = (long)NUM2INT(lng_start_ruby);
-  long lat_start = (long)NUM2INT(lat_start_ruby);
+  long lng_start = NUM2INT(lng_start_ruby);
+  long lat_start = NUM2INT(lat_start_ruby);
+  double multiply_const = NUM2DBL(multiply_const_ruby);
 
   long lat_range = NUM2INT(lat_range_ruby), lng_range = NUM2INT(lng_range_ruby);
 
@@ -210,7 +208,7 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
   long *polygons_vectors_lengths = new long[polygons_length];
 
   for(long i = 0; i < polygons_length; i++) {
-    RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
+    RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i, multiply_const);
   }
 
   unsigned long value;
@@ -283,7 +281,7 @@ static VALUE qualityOfPointsImage(VALUE self, VALUE lat_start_ruby, VALUE lng_st
 
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long point[2] = { NUM2INT(lng)*MULTIPLY_CONST/DIVIDE_CONST, ((long)NUM2INT(lat))*MULTIPLY_CONST/DIVIDE_CONST };
+  long point[2] = { NUM2DBL(lng)*DEFAULT_MULTIPLY_CONST, ((long)NUM2DBL(lat))*DEFAULT_MULTIPLY_CONST };
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
   double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
 
@@ -302,7 +300,7 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
   long *polygons_vectors_lengths = new long[polygons_length];
 
   for(long i = 0; i < polygons_length; i++) {
-    RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i);
+    RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i, DEFAULT_MULTIPLY_CONST);
   }
 
   double quality = 0;
@@ -486,7 +484,7 @@ void Init_quality_map_c(void) {
   VALUE Image = rb_define_class_under(QualityMapC, "Image", rb_cObject);
   VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
 
-  rb_define_singleton_method(Point, "qualityOfPointsImage", (ruby_method) qualityOfPointsImage, 8);
+  rb_define_singleton_method(Point, "qualityOfPointsImage", (ruby_method) qualityOfPointsImage, 9);
   rb_define_singleton_method(Point, "qualityOfPoint", (ruby_method) qualityOfPoint, 5);
 
   rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 3);

@@ -12,8 +12,10 @@ QUALITY_OF_POINT_POLYGONS_WITH_HOLE=[
   [[[[[-3,-3], [-3, 3], [3, 3], [3, -3], [-3,-3]], [[-1,-1], [-1, 1], [1, 1], [1, -1], [-1,-1]]]], 10, 1]
 ]
 
-QUALITY_OF_POINTS_CENSUS_TRACT_LAT = 36.9*524288/180
-QUALITY_OF_POINTS_CENSUS_TRACT_LONG = -102.8*524288/180
+PRECISION = 2**19
+HIGHEST_NUM = 180.0
+QUALITY_OF_POINTS_CENSUS_TRACT_LAT = 36.9*PRECISION/HIGHEST_NUM
+QUALITY_OF_POINTS_CENSUS_TRACT_LONG = -102.8*PRECISION/HIGHEST_NUM
 QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT = 291
 QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS = JSON.parse(File.read("spec/dumps/census_tract_polygon_dump"))
 QUALITY_OF_POINTS_CENSUS_TRACT_SCALE = 42000000
@@ -32,14 +34,14 @@ RSpec.describe QualityMapImage do
   end
 
   it "should return an image representing the data" do
-    test_response = subject.quality_of_points_image(QUALITY_OF_POINTS_CENSUS_TRACT_LAT, QUALITY_OF_POINTS_CENSUS_TRACT_LONG,
+    test_response = subject.quality_of_points_image(PRECISION/HIGHEST_NUM, QUALITY_OF_POINTS_CENSUS_TRACT_LAT, QUALITY_OF_POINTS_CENSUS_TRACT_LONG,
     QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, "First", 1)
     expect(test_response).to be_truthy
     File.write("test_image.png", test_response)
   end
 
   it "should return an image with a little square in the bottom left" do
-    test_response = subject.quality_of_points_image(QUALITY_OF_POINTS_SQUARE_LAT, QUALITY_OF_POINTS_SQUARE_LONG,
+    test_response = subject.quality_of_points_image(PRECISION/HIGHEST_NUM, QUALITY_OF_POINTS_SQUARE_LAT, QUALITY_OF_POINTS_SQUARE_LONG,
     QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT, QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT, QUALITY_OF_POINTS_SQUARE_POLYGONS, QUALITY_OF_POINTS_SQUARE_SCALE, "First", 1)
     expect(test_response).to be_truthy
     File.write("test_image2.png", test_response)

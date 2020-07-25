@@ -11,8 +11,8 @@ module QualityMapImage
     QualityMapC::Image.buildImage(size, images, image_data)
   end
 
-  def self.quality_of_points_image(lat, lng, lat_range, lng_range, polygons, quality_scale, quality_calc_method, quality_calc_value)
-    QualityMapC::Point.qualityOfPointsImage(lat, lng, lat_range, lng_range, polygons, quality_scale, METHOD_MAP[quality_calc_method], quality_calc_value)
+  def self.quality_of_points_image(multiply_const, lat, lng, lat_range, lng_range, polygons, quality_scale, quality_calc_method, quality_calc_value)
+    QualityMapC::Point.qualityOfPointsImage(multiply_const, lat, lng, lat_range, lng_range, polygons, quality_scale, METHOD_MAP[quality_calc_method], quality_calc_value)
   end
 
   def self.quality_of_point(lat, lng, polygons, quality_calc_method, quality_calc_value)
