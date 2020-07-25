@@ -7,7 +7,7 @@ module QualityMapImage
     "First" => 1
   }
 
-  def self.get_image(size, images, image_data)
+  def self.colorized_quality_image(size, images, image_data)
     QualityMapC::Image.buildImage(size, images, image_data)
   end
 

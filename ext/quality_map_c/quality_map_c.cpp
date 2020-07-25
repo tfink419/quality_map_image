@@ -378,6 +378,7 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
                       RSTRING_LEN(rb_ary_entry(images, i)),
                       &image_1, NULL))
         vips_error_exit( NULL );
+      // Extract 4 UCHAR bands from image and turn it into a 1 band UINT
       for(long j = 0; j < 4; j++) {
         if(vips_extract_band(image_1, bands+j, j, NULL))
           vips_error_exit( NULL );
