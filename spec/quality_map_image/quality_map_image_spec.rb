@@ -78,4 +78,11 @@ RSpec.describe QualityMapImage do
     expect(test_response).to be_truthy
     File.write("test_image4.png", test_response)
   end
+
+  it "builds a yellow image" do
+    image_data = [[0, 40, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 40, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
+    test_response = subject.get_image(256, [nil, nil], image_data)
+    expect(test_response).to be_truthy
+    File.write("test_image5.png", test_response)
+  end
 end

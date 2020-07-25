@@ -342,18 +342,17 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
 static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_data) {
   const char* image_data_err =
     "Image Data Array must have format: [range_low, range_high, multiple, scale, invert]";
+  const char* image_arrays_lineup_err =
+    "Image Array and Image Data Array must have same lengths";
 
   Check_Type(images, T_ARRAY);
   Check_Type(image_data, T_ARRAY);
 
   long num_images;
   long size = NUM2INT(size_ruby);
-  long full_size = size*size;
 
-  if((num_images = RARRAY_LEN(images)) == 0) return rb_str_new2("");
-
-  if(RARRAY_LEN(rb_ary_entry(image_data, 0)) != 5)
-    rb_raise(rb_eRuntimeError, "%s", image_data_err);
+  if((num_images = RARRAY_LEN(images)) != RARRAY_LEN(image_data))
+    rb_raise(rb_eRuntimeError, "%s", image_arrays_lineup_err);
   
   VipsImage **images_in = new VipsImage*[num_images];
   VipsImage *image_1, *image_2, *image_3;
@@ -363,78 +362,100 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
   bool invert;
 
   for(long i = 0; i < num_images; i++) {
-    if(vips_pngload_buffer (RSTRING_PTR(rb_ary_entry(images, i)),
-                    RSTRING_LEN(rb_ary_entry(images, i)),
-                    &image_1, NULL))
-      vips_error_exit( NULL );
-    for(long j = 0; j < 4; j++) {
-      if(vips_extract_band(image_1, bands+j, j, NULL))
-        vips_error_exit( NULL );
-      bands[j]->BandFmt = VIPS_FORMAT_UINT;
-      if(j < 3) {
-        if(vips_lshift_const1 (bands[j], &image_2, 8*(3-j), NULL))
-          vips_error_exit( NULL );
-        g_object_unref(bands[j]);
-        bands[j] = image_2;
-      }
-    }
-    g_object_unref(image_1);
-    if(vips_sum (bands, &image_1, 4, NULL))
-      vips_error_exit( NULL );
-    for(long j = 0; j < 4; j++)
-      g_object_unref(bands[j]);
+    Check_Type(rb_ary_entry(image_data, i), T_ARRAY);
+    if(RARRAY_LEN(rb_ary_entry(image_data, i)) != 5)
+      rb_raise(rb_eRuntimeError, "%s", image_data_err);
 
     range_low = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 0));
     range_high = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 1));
     multiple = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 2));
-    multiple = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*multiple;
     scale = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 3));
     invert = rb_ary_entry(rb_ary_entry(image_data, i), 4) == Qtrue;
+    if(!NIL_P(rb_ary_entry(images, i))) {
+      // Scale multiple to range
+      multiple = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*multiple;
+      if(vips_pngload_buffer (RSTRING_PTR(rb_ary_entry(images, i)),
+                      RSTRING_LEN(rb_ary_entry(images, i)),
+                      &image_1, NULL))
+        vips_error_exit( NULL );
+      for(long j = 0; j < 4; j++) {
+        if(vips_extract_band(image_1, bands+j, j, NULL))
+          vips_error_exit( NULL );
+        bands[j]->BandFmt = VIPS_FORMAT_UINT;
+        if(j < 3) {
+          if(vips_lshift_const1 (bands[j], &image_2, 8*(3-j), NULL))
+            vips_error_exit( NULL );
+          g_object_unref(bands[j]);
+          bands[j] = image_2;
+        }
+      }
+      g_object_unref(image_1);
+      if(vips_sum (bands, &image_1, 4, NULL))
+        vips_error_exit( NULL );
+      for(long j = 0; j < 4; j++)
+        g_object_unref(bands[j]);
 
-    // num = num*1/scale - low
-    if(vips_linear1(image_1, &image_2, 1/scale, 0-range_low, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_1);
 
-    // num = (num.abs+num)/2
-    if(vips_abs (image_2, &image_1, NULL))
-      vips_error_exit( NULL );
-    if(vips_add (image_1, image_2, &image_3, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_1);
-    g_object_unref(image_2);
-    if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_3);
+      // num = num*1/scale - low
+      if(vips_linear1(image_1, &image_2, 1/scale, 0-range_low, NULL))
+        vips_error_exit( NULL );
+      g_object_unref(image_1);
 
-    // num = high-low-num
-    if(vips_linear1(image_1, &image_2, -1, range_high-range_low, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_1);
+      // num = (num.abs+num)/2
+      if(vips_abs (image_2, &image_1, NULL))
+        vips_error_exit( NULL );
+      if(vips_add (image_1, image_2, &image_3, NULL))
+        vips_error_exit( NULL );
+      g_object_unref(image_1);
+      g_object_unref(image_2);
+      if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
+        vips_error_exit( NULL );
+      g_object_unref(image_3);
 
-    // num = (num.abs+num)/2
-    if(vips_abs (image_2, &image_1, NULL))
-      vips_error_exit( NULL );
-    if(vips_add (image_1, image_2, &image_3, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_1);
-    g_object_unref(image_2);
-    if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_3);
-
-    if(!invert) {
       // num = high-low-num
       if(vips_linear1(image_1, &image_2, -1, range_high-range_low, NULL))
         vips_error_exit( NULL );
       g_object_unref(image_1);
-      image_1 = image_2;
-    } // else num was already inverted
 
-    // Multiply by multiple and save to array
-    if(vips_linear1(image_1, images_in+i, multiple, 0, NULL))
-      vips_error_exit( NULL );
-    g_object_unref(image_1);
+      // num = (num.abs+num)/2
+      if(vips_abs (image_2, &image_1, NULL))
+        vips_error_exit( NULL );
+      if(vips_add (image_1, image_2, &image_3, NULL))
+        vips_error_exit( NULL );
+      g_object_unref(image_1);
+      g_object_unref(image_2);
+      if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
+        vips_error_exit( NULL );
+      g_object_unref(image_3);
+
+      if(!invert) {
+        // num = high-low-num
+        if(vips_linear1(image_1, &image_2, -1, range_high-range_low, NULL))
+          vips_error_exit( NULL );
+        g_object_unref(image_1);
+        image_1 = image_2;
+      } // else num was already inverted
+
+      // Multiply by multiple and save to array
+      if(vips_linear1(image_1, images_in+i, multiple, 0, NULL))
+        vips_error_exit( NULL );
+      g_object_unref(image_1);
+    }
+    else { // When no image was given
+      // Make a black and return it
+      if(vips_black (&image_1, size, size, "bands", 1, NULL))
+        vips_error_exit( NULL );
+      if(invert) { // make it a white image and multiply it by multiple
+        if(vips_linear1(image_1, &image_2, 1, 255.0, NULL))
+          vips_error_exit( NULL );
+        g_object_unref(image_1);
+
+        if(vips_linear1(image_2, &image_1, multiple, 0, NULL))
+          vips_error_exit( NULL );
+        g_object_unref(image_2);
+      }
+      images_in[i] = image_1;
+    }
   }
 
   // Sum together all those images
