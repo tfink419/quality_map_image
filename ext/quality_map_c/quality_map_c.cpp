@@ -195,7 +195,7 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
       PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
   VALUE ruby_blob = rb_str_new2("");
   png_set_write_fn(png_ptr, &ruby_blob, user_write_data, NULL);
-  png_set_compression_level(png_ptr, 1); // Z_BEST_SPEED
+  png_set_compression_level(png_ptr, 9); // Z_BEST_COMPRESSION
   // png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
   png_write_info(png_ptr, info_ptr);
 
