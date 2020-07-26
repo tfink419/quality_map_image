@@ -341,7 +341,7 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
 
 static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_data) {
   const char* image_data_err =
-    "Image Data Array must have format: [range_low, range_high, multiple, scale, invert]";
+    "Image Data Array must have format: [range_low, range_high, ratio, scale, invert]";
   const char* image_arrays_lineup_err =
     "Image Array and Image Data Array must have same lengths";
 
@@ -358,7 +358,7 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
   VipsImage *image_1, *image_2, *image_3;
   VipsImage *bands[4];
   long range_low, range_high;
-  double multiple, scale;
+  double ratio, scale;
   bool invert;
 
   for(long i = 0; i < num_images; i++) {
@@ -368,12 +368,12 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
 
     range_low = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 0));
     range_high = NUM2INT(rb_ary_entry(rb_ary_entry(image_data, i), 1));
-    multiple = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 2));
+    ratio = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 2));
     scale = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 3));
     invert = rb_ary_entry(rb_ary_entry(image_data, i), 4) == Qtrue;
     if(!NIL_P(rb_ary_entry(images, i))) {
-      // Scale multiple to range
-      multiple = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*multiple;
+      // Scale ratio to range
+      ratio = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*ratio;
       if(vips_pngload_buffer (RSTRING_PTR(rb_ary_entry(images, i)),
                       RSTRING_LEN(rb_ary_entry(images, i)),
                       &image_1, NULL))
@@ -437,8 +437,8 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
         image_1 = image_2;
       } // else num was already inverted
 
-      // Multiply by multiple and save to array
-      if(vips_linear1(image_1, images_in+i, multiple, 0, NULL))
+      // Multiply by ratio and save to array
+      if(vips_linear1(image_1, images_in+i, ratio, 0, NULL))
         vips_error_exit( NULL );
       g_object_unref(image_1);
     }
@@ -446,12 +446,12 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
       // Make a black and return it
       if(vips_black (&image_1, size, size, "bands", 1, NULL))
         vips_error_exit( NULL );
-      if(invert) { // make it a white image and multiply it by multiple
+      if(invert) { // make it a white image and multiply it by ratio
         if(vips_linear1(image_1, &image_2, 1, 255.0, NULL))
           vips_error_exit( NULL );
         g_object_unref(image_1);
 
-        if(vips_linear1(image_2, &image_1, multiple, 0, NULL))
+        if(vips_linear1(image_2, &image_1, ratio, 0, NULL))
           vips_error_exit( NULL );
         g_object_unref(image_2);
       }
@@ -479,7 +479,14 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
   VipsImage *lookup_table;
 
   // False colorize
-  lookup_table = vips_image_new_from_memory( GRADIENT_MAP, GRADIENT_MAP_CHANNELS * GRADIENT_MAP_SIZE, GRADIENT_MAP_SIZE, 1, GRADIENT_MAP_CHANNELS, VIPS_FORMAT_UCHAR );
+  lookup_table = vips_image_new_from_memory(
+    (void *) GRADIENT_MAP, 
+    GRADIENT_MAP_CHANNELS * GRADIENT_MAP_SIZE,
+    GRADIENT_MAP_SIZE,
+    1,
+    GRADIENT_MAP_CHANNELS,
+    VIPS_FORMAT_UCHAR
+  );
   if(!lookup_table) vips_error_exit( NULL );
   lookup_table->Type = VIPS_INTERPRETATION_sRGB;
   if(vips_maplut (image_1, &image_2, lookup_table , NULL))
