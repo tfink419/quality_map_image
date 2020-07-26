@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <iostream>
 #include <vips/vips.h>
-#include <png.h>
 
 #include "ruby/ruby.h"
 #include "ruby/encoding.h"
@@ -147,11 +146,6 @@ long QualitiesOfPoint(long point[2], double *&qualities, long **&polygons_as_vec
   return num_qualities;
 }
 
-void user_write_data(png_structp png_ptr, png_bytep data, png_size_t length) {
-  VALUE * ruby_blob_p = (VALUE *) png_get_io_ptr(png_ptr);
-  rb_str_cat(*ruby_blob_p, (char *) data, length);
-}
-
 // quality_calc_method is an
 static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE lat_start_ruby, VALUE lng_start_ruby, 
   VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_scale_ruby, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
@@ -179,27 +173,7 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
       break;
   }
 
-  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-  if(!png_ptr) rb_raise(rb_eRuntimeError, "%s", "Png Base structure failed to be created.");
-  png_infop info_ptr = png_create_info_struct(png_ptr);
-  if(!info_ptr)
-  {
-    png_destroy_write_struct(&png_ptr,
-      (png_infopp)NULL);
-    rb_raise(rb_eRuntimeError, "%s", "Png Info structure failed to be created.");
-  }
-  setjmp(png_jmpbuf(png_ptr));
-  png_set_write_status_fn(png_ptr, NULL);
-  png_set_IHDR(png_ptr, info_ptr, lng_range, lat_range,
-      8, PNG_COLOR_TYPE_RGB_ALPHA, PNG_INTERLACE_NONE,
-      PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-  VALUE ruby_blob = rb_str_new2("");
-  png_set_write_fn(png_ptr, &ruby_blob, user_write_data, NULL);
-  png_set_compression_level(png_ptr, 9); // Z_BEST_COMPRESSION
-  // png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
-  png_write_info(png_ptr, info_ptr);
-
-  png_bytep row = new png_byte[lng_range*4];
+  unsigned char *mem = new unsigned char[4 * lat_range * lng_range];
 
   // Structure of Pointer
   // Polygons ->
@@ -214,8 +188,8 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   unsigned long value;
   unsigned char red, green, blue, alpha;
 
-  for(long point[2] = {0, lat_end}, x; point[1] >= lat_start; point[1]--) {
-    for(point[0] = lng_start, x = 0; point[0] <= lng_end; point[0]++, x += 4) {
+  for(long point[2] = {0, lat_end}, x = 0; point[1] >= lat_start; point[1]--) {
+    for(point[0] = lng_start; point[0] <= lng_end; point[0]++, x += 4) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
@@ -225,10 +199,10 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
           green = (value >> 16) & 0xFF;
           blue = (value >> 8) & 0xFF;
           alpha = value & 0xFF;
-          row[x] = red;
-          row[x+1] = green;
-          row[x+2] = blue;
-          row[x+3] = alpha;
+          mem[x] = red;
+          mem[x+1] = green;
+          mem[x+2] = blue;
+          mem[x+3] = alpha;
           break;
         }
         case QualityFirst:
@@ -241,16 +215,16 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
               green = (value >> 16) & 0xFF;
               blue = (value >> 8) & 0xFF;
               alpha = value & 0xFF;
-              row[x] = red;
-              row[x+1] = green;
-              row[x+2] = blue;
-              row[x+3] = alpha;
+              mem[x] = red;
+              mem[x+1] = green;
+              mem[x+2] = blue;
+              mem[x+3] = alpha;
               found = true;
               break;
             }
           }
           if(!found) {
-            row[x] = row[x+1] = row[x+2] = row[x+3] = 0;
+            mem[x] = mem[x+1] = mem[x+2] = mem[x+3] = 0;
           }
         }
           break;
@@ -258,12 +232,22 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
           rb_raise(rb_eRuntimeError, "%s", "Unknown Calc Method Type Chosen");
       }
     }
-    png_write_row(png_ptr, row);
   }
-  png_write_end(png_ptr, info_ptr);
-  png_destroy_write_struct(&png_ptr, &info_ptr);
-  delete[] row;
+  size_t imageSize;
+  VipsImage *im;
+  void *pngPointer;
+  /* Turn the array we made into a vips_image */
+  im = vips_image_new_from_memory( mem, 4 * lat_range * lng_range, lng_range, lat_range, 4, VIPS_FORMAT_UCHAR );
+  im->Type = VIPS_INTERPRETATION_sRGB;
+  if(!im) vips_error_exit( NULL );
+  if( vips_pngsave_buffer(im, &pngPointer, &imageSize, "compression", 9, NULL) )
+    vips_error_exit( NULL );
+  g_object_unref(im);
+  
+  VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
+  g_free(pngPointer);
 
+  delete[] mem;
   switch(quality_calc_method) {
     case QualityLogExpSum:
       delete[] qualities;
@@ -276,6 +260,7 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   }
   delete[] polygons_as_vectors;
   delete[] polygons_vectors_lengths;
+
   return ruby_blob;
 }
 
