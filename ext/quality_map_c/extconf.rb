@@ -2,7 +2,7 @@ require 'mkmf'
 
 abort 'Missing Glib Package.' unless pkg_config("glib-2.0")
 abort 'Missing Glib Object Package.' unless pkg_config("gobject-2.0")
-pkg_config("vips-cpp")
+abort 'Missing VIPS Package' unless pkg_config("vips-cpp")
 abort 'Missing PNG library.' unless have_library('png16')
 abort 'Missing Z library.' unless have_library('z')
 
