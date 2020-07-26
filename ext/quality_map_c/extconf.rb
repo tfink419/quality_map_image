@@ -30,6 +30,9 @@ LIB_DIRS = [
   # Check the ruby install locations
   LIBDIR,
 
+  # for heroku
+  '/app/vendor/vips',
+
   # Finally fall back to /usr
   '/usr/lib',
 ]
