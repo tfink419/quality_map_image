@@ -31,7 +31,7 @@ LIB_DIRS = [
   LIBDIR,
 
   # for heroku
-  '/app/vendor/vips',
+  '/app/vendor/vips/lib',
 
   # Finally fall back to /usr
   '/usr/lib',
