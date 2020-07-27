@@ -188,8 +188,8 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   unsigned long fixed_value;
   double value;
 
-  for(long point[2] = {0, lat_end}, x = 0; point[1] >= lat_start; point[1]--) {
-    for(point[0] = lng_start; point[0] <= lng_end; point[0]++, x += 4) {
+  for(long point[2] = {0, lat_end}, pos = 0; point[1] >= lat_start; point[1]--) {
+    for(point[0] = lng_start; point[0] <= lng_end; point[0]++, pos += 4) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
@@ -202,17 +202,19 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
             polygons_length,
             NULL
           );
-          value = LogExpSum(qualities, num_qualities, quality_calc_value)*quality_scale;
+          value = LogExpSum(qualities, num_qualities, quality_calc_value);
+          cout << "value: " << value << endl;
+          value = value*quality_scale;
           if(value > UINT32_MAX)
             fixed_value = UINT32_MAX;
           else if(value < 0)
             fixed_value = 0;
           else
             fixed_value = value;
-          mem[x] = (fixed_value >> 24) & 0xFF; // red
-          mem[x+1] = (fixed_value >> 16) & 0xFF; // green
-          mem[x+2] = (fixed_value >> 8) & 0xFF; // blue
-          mem[x+3] = fixed_value & 0xFF; // alpha
+          mem[pos] = (fixed_value >> 24) & 0xFF; // red
+          mem[pos+1] = (fixed_value >> 16) & 0xFF; // green
+          mem[pos+2] = (fixed_value >> 8) & 0xFF; // blue
+          mem[pos+3] = fixed_value & 0xFF; // alpha
           break;
         }
         case QualityFirst:
@@ -220,23 +222,25 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
           bool found = false;
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
-              value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1))*quality_scale;
+              value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
+              value = value*quality_scale;
               if(value > UINT32_MAX)
                 fixed_value = UINT32_MAX;
               else if(value < 0)
                 fixed_value = 0;
               else
                 fixed_value = value;
-              mem[x] = (fixed_value >> 24) & 0xFF; // red
-              mem[x+1] = (fixed_value >> 16) & 0xFF; // green
-              mem[x+2] = (fixed_value >> 8) & 0xFF; // blue
-              mem[x+3] = fixed_value & 0xFF; // alpha
+              cout << "Fixed value: " << fixed_value << endl;
+              mem[pos] = (fixed_value >> 24) & 0xFF; // red
+              mem[pos+1] = (fixed_value >> 16) & 0xFF; // green
+              mem[pos+2] = (fixed_value >> 8) & 0xFF; // blue
+              mem[pos+3] = fixed_value & 0xFF; // alpha
               found = true;
               break;
             }
           }
           if(!found) {
-            mem[x] = mem[x+1] = mem[x+2] = mem[x+3] = 0;
+            mem[pos] = mem[pos+1] = mem[pos+2] = mem[pos+3] = 0;
           }
         }
           break;
