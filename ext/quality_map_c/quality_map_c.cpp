@@ -193,7 +193,15 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
-          long num_qualities = QualitiesOfPoint(point, qualities, polygons_as_vectors, polygons_vectors_lengths, polygons, polygons_length, NULL);
+          long num_qualities = QualitiesOfPoint(
+            point,
+            qualities,
+            polygons_as_vectors,
+            polygons_vectors_lengths,
+            polygons,
+            polygons_length,
+            NULL
+          );
           value = LogExpSum(qualities, num_qualities, quality_calc_value)*quality_scale;
           red = (value >> 24) & 0xFF;
           green = (value >> 16) & 0xFF;
@@ -266,7 +274,7 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
 
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long point[2] = { NUM2DBL(lng)*DEFAULT_MULTIPLY_CONST, ((long)NUM2DBL(lat))*DEFAULT_MULTIPLY_CONST };
+  long point[2] = { NUM2DBL(lng)*DEFAULT_MULTIPLY_CONST, NUM2DBL(lat)*DEFAULT_MULTIPLY_CONST };
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
   double quality_calc_value = NUM2DBL(quality_calc_value_ruby);
 
