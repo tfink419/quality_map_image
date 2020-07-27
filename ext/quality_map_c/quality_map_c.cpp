@@ -185,8 +185,8 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i, multiply_const);
   }
 
-  unsigned long value;
-  unsigned char red, green, blue, alpha;
+  unsigned long fixed_value;
+  double value;
 
   for(long point[2] = {0, lat_end}, x = 0; point[1] >= lat_start; point[1]--) {
     for(point[0] = lng_start; point[0] <= lng_end; point[0]++, x += 4) {
@@ -203,14 +203,16 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
             NULL
           );
           value = LogExpSum(qualities, num_qualities, quality_calc_value)*quality_scale;
-          red = (value >> 24) & 0xFF;
-          green = (value >> 16) & 0xFF;
-          blue = (value >> 8) & 0xFF;
-          alpha = value & 0xFF;
-          mem[x] = red;
-          mem[x+1] = green;
-          mem[x+2] = blue;
-          mem[x+3] = alpha;
+          if(value > UINT32_MAX)
+            fixed_value = UINT32_MAX;
+          else if(value < 0)
+            fixed_value = 0;
+          else
+            fixed_value = value;
+          mem[x] = (fixed_value >> 24) & 0xFF; // red
+          mem[x+1] = (fixed_value >> 16) & 0xFF; // green
+          mem[x+2] = (fixed_value >> 8) & 0xFF; // blue
+          mem[x+3] = fixed_value & 0xFF; // alpha
           break;
         }
         case QualityFirst:
@@ -219,14 +221,16 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
               value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1))*quality_scale;
-              red = (value >> 24) & 0xFF;
-              green = (value >> 16) & 0xFF;
-              blue = (value >> 8) & 0xFF;
-              alpha = value & 0xFF;
-              mem[x] = red;
-              mem[x+1] = green;
-              mem[x+2] = blue;
-              mem[x+3] = alpha;
+              if(value > UINT32_MAX)
+                fixed_value = UINT32_MAX;
+              else if(value < 0)
+                fixed_value = 0;
+              else
+                fixed_value = value;
+              mem[x] = (fixed_value >> 24) & 0xFF; // red
+              mem[x+1] = (fixed_value >> 16) & 0xFF; // green
+              mem[x+2] = (fixed_value >> 8) & 0xFF; // blue
+              mem[x+3] = fixed_value & 0xFF; // alpha
               found = true;
               break;
             }
