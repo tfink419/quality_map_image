@@ -71,7 +71,12 @@ module QualityMapImage
   def self.subsample4(size, top_left, top_right, bottom_left, bottom_right)
     v_top_left, v_top_right, v_bottom_left, v_bottom_right =
       [top_left, top_right, bottom_left, bottom_right].map do |image|
-      Vips::Image.new_from_buffer image, "", access: :sequential
+      if image
+        Vips::Image.new_from_buffer image, "", access: :sequential
+      end
+      else
+        Vips::Image.black(size, size)
+      end
     end
     top = v_top_left.merge(v_top_right, :horizontal, -size, 0)
     bottom = v_bottom_left.merge(v_bottom_right, :horizontal, -size, 0)
