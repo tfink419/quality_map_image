@@ -79,7 +79,7 @@ RSpec.describe QualityMapImage do
     File.write("test_image4.png", test_response)
   end
 
-  it "builds an image with a yellow square in the bottom left and a red squiggle in the top right" do
+  it "builds an image with a blue square in the bottom left and a red squiggle in the top right" do
     images = []
     image_data = [[0, 10, 0.1, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 10, 0.9, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
     images << File.read("test_image.png")
@@ -94,5 +94,29 @@ RSpec.describe QualityMapImage do
     test_response = subject.colorized_quality_image(256, [nil, nil], image_data)
     expect(test_response).to be_truthy
     File.write("test_image6.png", test_response)
+  end
+
+  it "should look normal" do
+    image = File.read("880.png")
+    image_data = [[0, 12.5, 1, 42000000, false]]
+    test_response = subject.colorized_quality_image(256, [image], image_data)
+    expect(test_response).to be_truthy
+    File.write("880-after.png", test_response)
+  end
+
+  it "should look normal" do
+    image = File.read("844.png")
+    image_data = [[0, 12.5, 1, 42000000, false]]
+    test_response = subject.colorized_quality_image(256, [image], image_data)
+    expect(test_response).to be_truthy
+    File.write("844-after.png", test_response)
+  end
+
+  it "should look normal" do
+    image = File.read("845.png")
+    image_data = [[0, 12.5, 1, 42000000, false]]
+    test_response = subject.colorized_quality_image(256, [image], image_data)
+    expect(test_response).to be_truthy
+    File.write("845-after.png", test_response)
   end
 end

@@ -202,9 +202,7 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
             polygons_length,
             NULL
           );
-          value = LogExpSum(qualities, num_qualities, quality_calc_value);
-          cout << "value: " << value << endl;
-          value = value*quality_scale;
+          value = LogExpSum(qualities, num_qualities, quality_calc_value)*quality_scale;
           if(value > UINT32_MAX)
             fixed_value = UINT32_MAX;
           else if(value < 0)
@@ -222,15 +220,13 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
           bool found = false;
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
-              value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1));
-              value = value*quality_scale;
+              value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1))*quality_scale;
               if(value > UINT32_MAX)
                 fixed_value = UINT32_MAX;
               else if(value < 0)
                 fixed_value = 0;
               else
                 fixed_value = value;
-              cout << "Fixed value: " << fixed_value << endl;
               mem[pos] = (fixed_value >> 24) & 0xFF; // red
               mem[pos+1] = (fixed_value >> 16) & 0xFF; // green
               mem[pos+2] = (fixed_value >> 8) & 0xFF; // blue
@@ -340,6 +336,80 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
   return rb_ary_new_from_args(2, DBL2NUM(quality), ids);
 }
 
+static int fixUpImage(VipsObject *scope, long size, VALUE image, VipsImage **out, long range_low, long range_high, double ratio, double scale, int invert) {
+  VipsImage *bands[4];
+  VipsImage **ims = (VipsImage **) vips_object_local_array( scope, 10 );
+  VipsImage *temp_band;
+  if(!NIL_P(image)) {
+    // Scale ratio to range
+    ratio = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*ratio;
+    if(vips_pngload_buffer (RSTRING_PTR(image),
+                    RSTRING_LEN(image),
+                    ims, NULL))
+      return -1;
+    // Extract 4 UCHAR bands from image and turn it into a 1 band UINT
+    for(long j = 0; j < 4; j++) {
+      if(vips_extract_band(ims[0], bands+j, j, NULL))
+        return -1;
+      bands[j]->BandFmt = VIPS_FORMAT_UCHAR;
+      if(vips_cast_uint(bands[j], &temp_band, NULL))
+        return -1;
+      g_object_unref(bands[j]);
+      bands[j] = temp_band;
+      if(j < 3) {
+        if(vips_lshift_const1 (bands[j], &temp_band, 8*(3-j), NULL))
+          return -1;
+        g_object_unref(bands[j]);
+        bands[j] = temp_band;
+      }
+    }
+    // sum bands together then, pix = pix/scale - low
+    if(vips_sum (bands, ims+1, 4, NULL) || 
+        vips_linear1 (ims[1], ims+2, 1/scale, -range_low, NULL) )
+      return -1;
+    for(long j = 0; j < 4; j++) {
+      g_object_unref(bands[j]);
+    }
+    // if(pix < 0) { pix = 0 }, if(pix > high-low) { px = high-low}
+    if( !(ims[3] = vips_image_new_from_image1( ims[1], 0 )) ||
+        !(ims[4] = vips_image_new_from_image1( ims[1], range_high-range_low )) ||
+        vips_less( ims[2], ims[3], ims+5, NULL ) ||
+        vips_ifthenelse( ims[5], ims[3], ims[2], ims+6, NULL ) ||
+        vips_more( ims[6], ims[4], ims+7, NULL ) ||
+        vips_ifthenelse( ims[7], ims[4], ims[6], ims+8, NULL ) ) 
+        return -1;
+
+    if(invert) {
+      // num = high-low-num
+      if(vips_linear1(ims[8], ims+9, -1, range_high-range_low, NULL))
+        return -1;
+    } else {
+      ims[9] = ims[8];
+      ims[8] = NULL; // This shuts up a bunch of crazy glib memory erase errors
+    }
+    // Multiply by ratio and save
+    if(vips_linear1(ims[9], out, ratio, 0, NULL))
+      return -1;
+  }
+  else { // When no image was given
+    // Make a black and return it
+    if(vips_black (ims, size, size, "bands", 1, NULL))
+      return -1;
+    if(invert) { // make it a white image and multiply it by ratio
+      if(vips_linear1(ims[0], &ims[1], 1, 255.0, NULL))
+        return -1;
+
+      if(vips_linear1(ims[1], out, ratio, 0, NULL))
+        return -1;
+    }
+    else {
+      *out = ims[0];
+      ims[0] = NULL;
+    }
+  }
+  return 0;
+}
+
 static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_data) {
   const char* image_data_err =
     "Image Data Array must have format: [range_low, range_high, ratio, scale, invert]";
@@ -359,11 +429,11 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
 
   if(num_images) {
     VipsImage **images_in = new VipsImage*[num_images];
-    VipsImage *image_3;
-    VipsImage *bands[4];
     long range_low, range_high;
     double ratio, scale;
     bool invert;
+    VipsObject *scope;
+    scope = VIPS_OBJECT( vips_image_new() );
     for(long i = 0; i < num_images; i++) {
       Check_Type(rb_ary_entry(image_data, i), T_ARRAY);
       if(RARRAY_LEN(rb_ary_entry(image_data, i)) != 5)
@@ -374,93 +444,22 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
       ratio = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 2));
       scale = NUM2DBL(rb_ary_entry(rb_ary_entry(image_data, i), 3));
       invert = rb_ary_entry(rb_ary_entry(image_data, i), 4) == Qtrue;
-      if(!NIL_P(rb_ary_entry(images, i))) {
-        // Scale ratio to range
-        ratio = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*ratio;
-        if(vips_pngload_buffer (RSTRING_PTR(rb_ary_entry(images, i)),
-                        RSTRING_LEN(rb_ary_entry(images, i)),
-                        &image_1, NULL))
-          vips_error_exit( NULL );
-        // Extract 4 UCHAR bands from image and turn it into a 1 band UINT
-        for(long j = 0; j < 4; j++) {
-          if(vips_extract_band(image_1, bands+j, j, NULL))
-            vips_error_exit( NULL );
-          bands[j]->BandFmt = VIPS_FORMAT_UINT;
-          if(j < 3) {
-            if(vips_lshift_const1 (bands[j], &image_2, 8*(3-j), NULL))
-              vips_error_exit( NULL );
-            g_object_unref(bands[j]);
-            bands[j] = image_2;
-          }
-        }
-        g_object_unref(image_1);
-        if(vips_sum (bands, &image_1, 4, NULL))
-          vips_error_exit( NULL );
-        for(long j = 0; j < 4; j++)
-          g_object_unref(bands[j]);
-
-
-        // num = num*1/scale - low
-        if(vips_linear1(image_1, &image_2, 1/scale, 0-range_low, NULL))
-          vips_error_exit( NULL );
-        g_object_unref(image_1);
-
-        // num = (num.abs+num)/2
-        if(vips_abs (image_2, &image_1, NULL))
-          vips_error_exit( NULL );
-        if(vips_add (image_1, image_2, &image_3, NULL))
-          vips_error_exit( NULL );
-        g_object_unref(image_1);
-        g_object_unref(image_2);
-        if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
-          vips_error_exit( NULL );
-        g_object_unref(image_3);
-
-        // num = high-low-num
-        if(vips_linear1(image_1, &image_2, -1, range_high-range_low, NULL))
-          vips_error_exit( NULL );
-        g_object_unref(image_1);
-
-        // num = (num.abs+num)/2
-        if(vips_abs (image_2, &image_1, NULL))
-          vips_error_exit( NULL );
-        if(vips_add (image_1, image_2, &image_3, NULL))
-          vips_error_exit( NULL );
-        g_object_unref(image_1);
-        g_object_unref(image_2);
-        if(vips_linear1(image_3, &image_1, 0.5, 0, NULL))
-          vips_error_exit( NULL );
-        g_object_unref(image_3);
-
-        if(!invert) {
-          // num = high-low-num
-          if(vips_linear1(image_1, &image_2, -1, range_high-range_low, NULL))
-            vips_error_exit( NULL );
-          g_object_unref(image_1);
-          image_1 = image_2;
-        } // else num was already inverted
-
-        // Multiply by ratio and save to array
-        if(vips_linear1(image_1, images_in+i, ratio, 0, NULL))
-          vips_error_exit( NULL );
-        g_object_unref(image_1);
-      }
-      else { // When no image was given
-        // Make a black and return it
-        if(vips_black (&image_1, size, size, "bands", 1, NULL))
-          vips_error_exit( NULL );
-        if(invert) { // make it a white image and multiply it by ratio
-          if(vips_linear1(image_1, &image_2, 1, 255.0, NULL))
-            vips_error_exit( NULL );
-          g_object_unref(image_1);
-
-          if(vips_linear1(image_2, &image_1, ratio, 0, NULL))
-            vips_error_exit( NULL );
-          g_object_unref(image_2);
-        }
-        images_in[i] = image_1;
+      if(fixUpImage(
+          scope,
+          size,
+          rb_ary_entry(images,i),
+          images_in+i,
+          range_low,
+          range_high,
+          ratio,
+          scale,
+          invert
+        )) {
+        g_object_unref( scope );
+        vips_error_exit( NULL );
       }
     }
+    g_object_unref( scope );
 
     // Sum together all those images
     if(vips_sum (images_in, &image_1, num_images, NULL))
@@ -516,7 +515,6 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
   VALUE stringRuby = rb_str_new((char *)pngPointer, imageSize);
   g_free(pngPointer);
   return stringRuby;
-  return Qtrue;
 }
 
 typedef VALUE (*ruby_method)(...);
