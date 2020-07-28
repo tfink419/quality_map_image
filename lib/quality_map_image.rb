@@ -73,7 +73,6 @@ module QualityMapImage
       [top_left, top_right, bottom_left, bottom_right].map do |image|
       if image
         Vips::Image.new_from_buffer image, "", access: :sequential
-      end
       else
         Vips::Image.black(size, size)
       end
