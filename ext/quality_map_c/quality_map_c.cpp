@@ -150,14 +150,14 @@ long QualitiesOfPoint(long point[2], double *qualities, long **polygons_as_vecto
 static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE lat_start_ruby, VALUE lng_start_ruby, 
   VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_scale_ruby, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long lng_start = NUM2INT(lng_start_ruby);
-  long lat_start = NUM2INT(lat_start_ruby);
-  double multiply_const = NUM2DBL(multiply_const_ruby);
+  long lng_start = NUM2INT(lng_start_ruby)*2;
+  long lat_start = NUM2INT(lat_start_ruby)*2;
+  double multiply_const = NUM2DBL(multiply_const_ruby)*2;
 
-  long lat_range = NUM2INT(lat_range_ruby), lng_range = NUM2INT(lng_range_ruby);
+  long lat_range = NUM2INT(lat_range_ruby)*2, lng_range = NUM2INT(lng_range_ruby)*2;
 
-  long lng_end = lng_range+lng_start-1;
-  long lat_end = lat_range+lat_start-1;
+  long lng_end = (lng_range+lng_start-1);
+  long lat_end = (lat_range+lat_start-1);
   long polygons_length = RARRAY_LEN(polygons);
 
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
@@ -246,15 +246,18 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
     }
   }
   size_t imageSize;
-  VipsImage *im;
+  VipsImage *original, *subsampled;
   void *pngPointer;
   /* Turn the array we made into a vips_image */
-  im = vips_image_new_from_memory( mem, 4 * lat_range * lng_range, lng_range, lat_range, 4, VIPS_FORMAT_UCHAR );
-  im->Type = VIPS_INTERPRETATION_sRGB;
-  if(!im) vips_error_exit( NULL );
-  if( vips_pngsave_buffer(im, &pngPointer, &imageSize, "compression", 9, NULL) )
+  original = vips_image_new_from_memory( mem, 4 * lat_range * lng_range, lng_range, lat_range, 4, VIPS_FORMAT_UCHAR );
+  original->Type = VIPS_INTERPRETATION_sRGB;
+  if(!original) vips_error_exit( NULL );
+  if( vips_subsample(original, &subsampled, 2, 2, NULL) )
     vips_error_exit( NULL );
-  g_object_unref(im);
+  g_object_unref(original);
+  if( vips_pngsave_buffer(subsampled, &pngPointer, &imageSize, "compression", 9, NULL) )
+    vips_error_exit( NULL );
+  g_object_unref(subsampled);
   
   VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
   g_free(pngPointer);
