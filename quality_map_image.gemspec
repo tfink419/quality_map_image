@@ -16,4 +16,6 @@ Gem::Specification.new do |s|
   s.homepage = "https://tyler.finks.site"
   s.extensions = "ext/quality_map_c/extconf.rb"
   s.required_ruby_version = Gem::Requirement.new(">= 2.6.5")
+  s.add_runtime_dependency 'gradient', '~> 0.5.1'
+  s.add_runtime_dependency 'ruby-vips'
 end
