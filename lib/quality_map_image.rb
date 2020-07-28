@@ -74,7 +74,7 @@ module QualityMapImage
       if image
         Vips::Image.new_from_buffer image, "", access: :sequential
       else
-        Vips::Image.black(size, size)
+        Vips::Image.black(size, size, bands:4)
       end
     end
     top = v_top_left.merge(v_top_right, :horizontal, -size, 0)
