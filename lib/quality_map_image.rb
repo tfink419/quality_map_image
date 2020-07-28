@@ -69,8 +69,10 @@ module QualityMapImage
 
   # 
   def self.subsample4(size, top_left, top_right, bottom_left, bottom_right)
+    arr = [top_left, top_right, bottom_left, bottom_right]
+    return nil if !arr.any?
     v_top_left, v_top_right, v_bottom_left, v_bottom_right =
-      [top_left, top_right, bottom_left, bottom_right].map do |image|
+      arr.map do |image|
       if image
         Vips::Image.new_from_buffer image, "", access: :sequential
       else
