@@ -1,4 +1,4 @@
-#include "gradient.hpp"
+#include "gradient.h"
 #define GRADIENT_MAP_SIZE_PRE 1024
 const int GRADIENT_MAP_CHANNELS = 4;
 const int GRADIENT_MAP_SIZE = GRADIENT_MAP_SIZE_PRE/GRADIENT_MAP_CHANNELS;

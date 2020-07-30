@@ -35,14 +35,14 @@ RSpec.describe QualityMapImage do
 
   it "should return an image representing the data" do
     test_response = subject.quality_of_points_image(PRECISION/HIGHEST_NUM, QUALITY_OF_POINTS_CENSUS_TRACT_LAT, QUALITY_OF_POINTS_CENSUS_TRACT_LONG,
-    QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, "First", 1)
+    QUALITY_OF_POINTS_CENSUS_TRACT_WIDTH_HEIGHT, QUALITY_OF_POINTS_CENSUS_TRACT_POLYGONS, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, "First", 1)
     expect(test_response).to be_truthy
     File.write("test_images/test_image.png", test_response)
   end
 
   it "should return an image with a little square in the bottom left" do
     test_response = subject.quality_of_points_image(PRECISION/HIGHEST_NUM, QUALITY_OF_POINTS_SQUARE_LAT, QUALITY_OF_POINTS_SQUARE_LONG,
-    QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT, QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT, QUALITY_OF_POINTS_SQUARE_POLYGONS, QUALITY_OF_POINTS_SQUARE_SCALE, "First", 1)
+    QUALITY_OF_POINTS_SQUARE_WIDTH_HEIGHT, QUALITY_OF_POINTS_SQUARE_POLYGONS, QUALITY_OF_POINTS_SQUARE_SCALE, "LogExpSum", 2)
     expect(test_response).to be_truthy
     File.write("test_images/test_image2.png", test_response)
   end
@@ -104,5 +104,17 @@ RSpec.describe QualityMapImage do
     test_response = subject.subsample4(291, top_left, top_right, bottom_left, bottom_right)
     expect(test_response).to be_truthy
     File.write("test_images/test_image7.png", test_response)
+  end
+
+  it 'should remove holes from the images' do
+    images = []
+    images << File.read("test_images/852-1.png")
+    images << File.read("test_images/852-2.png")
+    images << File.read("test_images/856.png")
+    images.each_with_index do |image, i|
+      test_response = subject.clean_zeros(image)
+      expect(test_response).to be_truthy
+      File.write("test_images/zeroes_cleaned#{i}.png", test_response)
+    end
   end
 end

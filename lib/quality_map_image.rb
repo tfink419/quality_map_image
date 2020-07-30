@@ -21,8 +21,8 @@ module QualityMapImage
     QualityMapC::Image.buildImage(size, images, image_data)
   end
 
-  def self.quality_of_points_image(multiply_const, lat, lng, lat_range, lng_range, polygons, quality_scale, quality_calc_method, quality_calc_value)
-    QualityMapC::Point.qualityOfPointsImage(multiply_const, lat, lng, lat_range, lng_range, polygons, quality_scale, METHOD_MAP[quality_calc_method], quality_calc_value)
+  def self.quality_of_points_image(multiply_const, lat, lng, range, polygons, quality_scale, quality_calc_method, quality_calc_value)
+    QualityMapC::Point.qualityOfPointsImage(multiply_const, lat, lng, range, polygons, quality_scale, METHOD_MAP[quality_calc_method], quality_calc_value)
   end
 
   def self.quality_of_point(lat, lng, polygons, quality_calc_method, quality_calc_value)
@@ -37,27 +37,24 @@ module QualityMapImage
       [color.red.to_i, color.green.to_i, color.blue.to_i, 128]
     end
     fixed_images = (0...images.length).map do |i|
-      image = Vips::Image.new_from_buffer images[i], "", access: :sequential
-      bands = image.bandsplit
-      bands = bands.each_with_index.map do |band, ind|
-        band = (band.cast(:uint) << (8*(3-ind)))
+      if image
+        image = bandjoin(Vips::Image.new_from_buffer images[i], "", access: :sequential)
+        range_low = image_data[i][0]
+        range_high = image_data[i][1]
+        ratio = image_data[i][2]
+        ratio = (colors.length-1).to_f/(range_high-range_low)*ratio
+        scale = image_data[i][3]
+        invert = image_data[i][4]
+        
+        image = image.linear 1/scale, 0-range_low
+        image = (image < 0).ifthenelse(0, image)
+        image = (image > range_high-range_low).ifthenelse(range_high-range_low, lut)
+        image = (range_high-range_low)-image if invert
+        image = image * ratio
+        image.round(:rint).cast(:uchar)
+      else
+        Vips::Image.black(size, size)
       end
-      image = Vips::Image.sum(bands)
-      range_low = image_data[i][0]
-      range_high = image_data[i][1]
-      ratio = image_data[i][2]
-      ratio = (colors.length-1).to_f/(range_high-range_low)*ratio
-      scale = image_data[i][3]
-      invert = image_data[i][4];
-      
-      lut = Vips::Image.identity
-      lut = lut.linear 1/scale, 0-range_low
-      lut = (lut < 0).ifthenelse(0, lut)
-      lut = (lut > range_high-range_low).ifthenelse(range_high-range_low, lut)
-      lut = (range_high-range_low)-lut if invert
-      lut = lut * ratio
-      image.maplut lut
-      image.round(:rint).cast(:uchar)
     end
     image = Vips::Image.sum(fixed_images)
     color_lut = Vips::Image.new_from_array(colors)
@@ -82,8 +79,27 @@ module QualityMapImage
     top = v_top_left.merge(v_top_right, :horizontal, -size, 0)
     bottom = v_bottom_left.merge(v_bottom_right, :horizontal, -size, 0)
     top.
-    merge(bottom, :vertical, 0, -size).
-    subsample(2, 2).
-    pngsave_buffer(compression: 9, strip: true)
+      merge(bottom, :vertical, 0, -size).
+      subsample(2, 2).
+      pngsave_buffer(compression: 9, strip: true)
+  end
+
+  # This is just test code, the real use case is in C
+  def self.clean_zeros(image_blob)
+    image = bandjoin(Vips::Image.new_from_buffer image_blob, "", access: :sequential)
+    median_ranked = image.median(2)
+    image = (image == 0).ifthenelse(median_ranked, image)
+    split_into_bands(image).
+      pngsave_buffer(compression: 9, strip: true)
+  end
+
+  private
+
+  def self.bandjoin(image)
+    image.copy(format: :uint, bands: 1)
+  end
+
+  def self.split_into_bands(image)
+    image.copy(format: :uchar, bands: 4)
   end
 end

@@ -1,20 +1,16 @@
-#include <stdio.h>
-#include <math.h>
-#include <stdlib.h>
-#include <iostream>
-#include <vips/vips.h>
+#include "stdio.h"
+#include "math.h"
+#include "stdlib.h"
+#include "vips/vips.h"
 
 #include "ruby/ruby.h"
 #include "ruby/encoding.h"
 
-#include "gradient.hpp"
+#include "gradient.h"
 
-using namespace std;
 
 #define DEFAULT_MULTIPLY_CONST 1048576 // 2 ^ 19
 
-
-extern "C" {
 
 enum QualityCalcMethod {QualityLogExpSum = 0, QualityFirst = 1}; 
 
@@ -74,7 +70,7 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length, double multip
       if(RARRAY_LEN(first) != 2) {
         rb_raise(rb_eArgError, "%s", earg);
       }
-      last = rb_ary_entry(rb_ary_entry(rb_ary_entry(ary,i),j),0);
+      last = rb_ary_entry(rb_ary_entry(rb_ary_entry(ary,i),j),coordsLength-1);
       Check_Type(last, T_ARRAY);
       if(RARRAY_LEN(last) != 2) {
         rb_raise(rb_eArgError, "%s", earg);
@@ -93,7 +89,7 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length, double multip
     }
   }
 
-  *poly = new long[(*length)*4];
+  *poly = malloc((*length) * 4 * sizeof **poly);
   long poly_ind = 0;
   VALUE coord1, coord2;
 
@@ -122,17 +118,6 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length, double multip
   // the sweeping algorithm can stop when it gets to the points x
 }
 
-static void checkPointArray(VALUE point) {
-  const char* pointError =
-    "Points have format: [[p1_lat, p1_long, p1_quality], [p2_lat, p2_long, p2_quality], ...]";
-
-  Check_Type(point, T_ARRAY);
-
-  if(RARRAY_LEN(point) != 3) {
-    rb_raise(rb_eArgError, "%s", pointError);
-  }
-}
-
 long QualitiesOfPoint(long point[2], double *qualities, long **polygons_as_vectors, long *polygons_vectors_lengths, VALUE polygons, long polygons_length, VALUE ids) {
   long num_qualities = 0;
   for(long i = 0; i < polygons_length; i++) {
@@ -146,18 +131,44 @@ long QualitiesOfPoint(long point[2], double *qualities, long **polygons_as_vecto
   return num_qualities;
 }
 
+static int memArrayToPngPointerWithFilter(VipsObject *scope, unsigned char *image_mem, unsigned char* found_mem, long size, void **pngPointer, int *imageSize) {
+  VipsImage **ims = (VipsImage **) vips_object_local_array( scope, 7 );
+  if(!(ims[0] = vips_image_new_from_memory( image_mem, 4 * size * size, size, size, 4, VIPS_FORMAT_UCHAR)))
+    return -1;
+  if(vips_copy(ims[0], ims+1, "bands", 1, "format", VIPS_FORMAT_UINT, NULL))
+    return -1;
+  if(found_mem) {
+    // Apply median rank filtering on holes
+    if(!(ims[2] = vips_image_new_from_memory( found_mem, size * size, size, size, 1, VIPS_FORMAT_UCHAR )) ||
+      vips_median( ims[1], ims+3, 2, NULL ) ||
+      vips_equal_const1( ims[2], ims+4, 1, NULL ) ||
+      vips_ifthenelse( ims[4], ims[1], ims[3], ims+4, NULL ) )
+        return -1;
+  }
+  else {
+    ims[4] = ims[1];
+    ims[1] = NULL;
+  }
+  if(vips_copy(ims[4], ims+5, "bands", 4, "format", VIPS_FORMAT_UCHAR, NULL))
+    return -1;
+
+  if( vips_pngsave_buffer(ims[5], pngPointer, imageSize, "compression", 9, NULL) )
+    return -1;
+
+  return 0;
+}
+
 // quality_calc_method is an
-static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE lat_start_ruby, VALUE lng_start_ruby, 
-  VALUE lat_range_ruby, VALUE lng_range_ruby, VALUE polygons, VALUE quality_scale_ruby, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
+static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE lat_start_ruby, VALUE lng_start_ruby, VALUE range_ruby, VALUE polygons, VALUE quality_scale_ruby, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
-  long lng_start = NUM2INT(lng_start_ruby)*2;
-  long lat_start = NUM2INT(lat_start_ruby)*2;
-  double multiply_const = NUM2DBL(multiply_const_ruby)*2;
+  long lng_start = NUM2INT(lng_start_ruby);
+  long lat_start = NUM2INT(lat_start_ruby);
+  double multiply_const = NUM2DBL(multiply_const_ruby);
 
-  long lat_range = NUM2INT(lat_range_ruby)*2, lng_range = NUM2INT(lng_range_ruby)*2;
+  long range = NUM2INT(range_ruby);
 
-  long lng_end = (lng_range+lng_start-1);
-  long lat_end = (lat_range+lat_start-1);
+  long lng_end = (range+lng_start-1);
+  long lat_end = (range+lat_start-1);
   long polygons_length = RARRAY_LEN(polygons);
 
   enum QualityCalcMethod quality_calc_method = (enum QualityCalcMethod) NUM2INT(quality_calc_method_ruby);
@@ -165,31 +176,36 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   double quality_scale = NUM2DBL(quality_scale_ruby);
 
   double *qualities;
+
+  unsigned char *image_mem = malloc(range * range * 4 * sizeof *image_mem);
+  unsigned char *found_mem = NULL;
+
   switch(quality_calc_method) {
     case QualityLogExpSum:
-      qualities = new double[polygons_length];
+      qualities = malloc(polygons_length * sizeof *qualities);
+      break;
+    case QualityFirst:
+      found_mem = malloc(range * range * sizeof *found_mem);
       break;
     default:
       break;
   }
-
-  unsigned char *mem = new unsigned char[4 * lat_range * lng_range];
-
   // Structure of Pointer
   // Polygons ->
   // Vectors -> x1, y1, x2, y2, x1, y1, x2, y2...
-  long **polygons_as_vectors = new long *[polygons_length];
-  long *polygons_vectors_lengths = new long[polygons_length];
+  long **polygons_as_vectors = malloc(polygons_length * sizeof *polygons_as_vectors);
+  long *polygons_vectors_lengths = malloc(polygons_length * sizeof *polygons_vectors_lengths);
 
   for(long i = 0; i < polygons_length; i++) {
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i, multiply_const);
   }
 
-  unsigned long fixed_value;
   double value;
 
-  for(long point[2] = {0, lat_end}, pos = 0; point[1] >= lat_start; point[1]--) {
-    for(point[0] = lng_start; point[0] <= lng_end; point[0]++, pos += 4) {
+  unsigned long fixed_value;
+
+  for(long point[2] = {0, lat_end}, image_pos = 0, found_pos = 0; point[1] >= lat_start; point[1]--) {
+    for(point[0] = lng_start; point[0] <= lng_end; point[0]++, found_pos++, image_pos += 4) {
       switch(quality_calc_method) {
         case QualityLogExpSum:
         {
@@ -209,15 +225,15 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
             fixed_value = 0;
           else
             fixed_value = value;
-          mem[pos] = (fixed_value >> 24) & 0xFF; // red
-          mem[pos+1] = (fixed_value >> 16) & 0xFF; // green
-          mem[pos+2] = (fixed_value >> 8) & 0xFF; // blue
-          mem[pos+3] = fixed_value & 0xFF; // alpha
+          image_mem[image_pos] = (fixed_value >> 24) & 0xFF; // red
+          image_mem[image_pos+1] = (fixed_value >> 16) & 0xFF; // green
+          image_mem[image_pos+2] = (fixed_value >> 8) & 0xFF; // blue
+          image_mem[image_pos+3] = fixed_value & 0xFF; // alpha
           break;
         }
         case QualityFirst:
         {
-          bool found = false;
+          found_mem[found_pos] = 0;
           for(long i = 0; i < polygons_length; i++) {
             if(PointInPolygon(point, polygons_as_vectors[i], polygons_vectors_lengths[i])) {
               value = NUM2DBL(rb_ary_entry(rb_ary_entry(polygons, i),1))*quality_scale;
@@ -227,16 +243,16 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
                 fixed_value = 0;
               else
                 fixed_value = value;
-              mem[pos] = (fixed_value >> 24) & 0xFF; // red
-              mem[pos+1] = (fixed_value >> 16) & 0xFF; // green
-              mem[pos+2] = (fixed_value >> 8) & 0xFF; // blue
-              mem[pos+3] = fixed_value & 0xFF; // alpha
-              found = true;
+              image_mem[image_pos] = (fixed_value >> 24) & 0xFF; // red
+              image_mem[image_pos+1] = (fixed_value >> 16) & 0xFF; // green
+              image_mem[image_pos+2] = (fixed_value >> 8) & 0xFF; // blue
+              image_mem[image_pos+3] = fixed_value & 0xFF; // alpha
+              found_mem[found_pos] = 1;
               break;
             }
           }
-          if(!found) {
-            mem[pos] = mem[pos+1] = mem[pos+2] = mem[pos+3] = 0;
+          if(!found_mem[found_pos]) {
+            image_mem[image_pos] = image_mem[image_pos+1] = image_mem[image_pos+2] = image_mem[image_pos+3] = 0;
           }
         }
           break;
@@ -245,36 +261,34 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
       }
     }
   }
-  size_t imageSize;
-  VipsImage *original, *subsampled;
-  void *pngPointer;
-  /* Turn the array we made into a vips_image */
-  original = vips_image_new_from_memory( mem, 4 * lat_range * lng_range, lng_range, lat_range, 4, VIPS_FORMAT_UCHAR );
-  original->Type = VIPS_INTERPRETATION_sRGB;
-  if(!original) vips_error_exit( NULL );
-  if( vips_subsample(original, &subsampled, 2, 2, NULL) )
-    vips_error_exit( NULL );
-  g_object_unref(original);
-  if( vips_pngsave_buffer(subsampled, &pngPointer, &imageSize, "compression", 9, NULL) )
-    vips_error_exit( NULL );
-  g_object_unref(subsampled);
-  
-  VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
-  g_free(pngPointer);
 
-  delete[] mem;
+  size_t imageSize;
+  void *pngPointer;
+  VipsObject *scope;
+  scope = VIPS_OBJECT( vips_image_new() );
+  if(memArrayToPngPointerWithFilter(scope, image_mem, found_mem, range, &pngPointer, &imageSize))
+    vips_error_exit( NULL );
+
+  VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
+
+  g_free(pngPointer);
+  g_object_unref( scope );
+  free(image_mem);
   switch(quality_calc_method) {
     case QualityLogExpSum:
-      delete[] qualities;
+      free(qualities);
+      break;
+    case QualityFirst:
+      free(found_mem);
       break;
     default:
       break;
   }
   for(long i = 0; i < polygons_length; i++) {
-    delete[] polygons_as_vectors[i];
+    free(polygons_as_vectors[i]);
   }
-  delete[] polygons_as_vectors;
-  delete[] polygons_vectors_lengths;
+  free(polygons_as_vectors);
+  free(polygons_vectors_lengths);
 
   return ruby_blob;
 }
@@ -290,14 +304,14 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
   double *qualities;
   switch(quality_calc_method) {
     case QualityLogExpSum:
-      qualities = new double[polygons_length];
+      qualities = malloc(polygons_length * sizeof *qualities);
       break;
     default:
       break;
   }
   VALUE ids = rb_ary_new();
-  long **polygons_as_vectors = new long *[polygons_length];
-  long *polygons_vectors_lengths = new long[polygons_length];
+  long **polygons_as_vectors = malloc(polygons_length * sizeof *polygons_as_vectors);
+  long *polygons_vectors_lengths = malloc(polygons_length * sizeof *polygons_vectors_lengths);
 
   for(long i = 0; i < polygons_length; i++) {
     RubyPointArrayToCVectorArray(rb_ary_entry(rb_ary_entry(polygons, i),0), polygons_as_vectors+i, polygons_vectors_lengths+i, DEFAULT_MULTIPLY_CONST);
@@ -326,16 +340,16 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
 
   switch(quality_calc_method) {
     case QualityLogExpSum:
-      delete[] qualities;
+      free(qualities);
       break;
     default:
       break;
   }
   for(long i = 0; i < polygons_length; i++) {
-    delete[] polygons_as_vectors[i];
+    free(polygons_as_vectors[i]);
   }
-  delete[] polygons_as_vectors;
-  delete[] polygons_vectors_lengths;
+  free(polygons_as_vectors);
+  free(polygons_vectors_lengths);
   return rb_ary_new_from_args(2, DBL2NUM(quality), ids);
 }
 
@@ -431,12 +445,11 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
   VipsImage *image_1, *image_2;
 
   if(num_images) {
-    VipsImage **images_in = new VipsImage*[num_images];
+    VipsImage **images_in = malloc(num_images * sizeof *images_in);
     long range_low, range_high;
     double ratio, scale;
-    bool invert;
-    VipsObject *scope;
-    scope = VIPS_OBJECT( vips_image_new() );
+    int invert;
+    VipsObject *scope = VIPS_OBJECT( vips_image_new() );
     for(long i = 0; i < num_images; i++) {
       Check_Type(rb_ary_entry(image_data, i), T_ARRAY);
       if(RARRAY_LEN(rb_ary_entry(image_data, i)) != 5)
@@ -470,7 +483,7 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
     for(long i = 0; i < num_images; i++) {
       g_object_unref( images_in[i] );
     }
-    delete[] images_in;
+    free(images_in);
   }
   else {
     // Make a white image
@@ -520,17 +533,14 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
   return stringRuby;
 }
 
-typedef VALUE (*ruby_method)(...);
 
 void Init_quality_map_c(void) {
   VALUE QualityMapC = rb_define_module("QualityMapC");
   VALUE Image = rb_define_class_under(QualityMapC, "Image", rb_cObject);
   VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
 
-  rb_define_singleton_method(Point, "qualityOfPointsImage", (ruby_method) qualityOfPointsImage, 9);
-  rb_define_singleton_method(Point, "qualityOfPoint", (ruby_method) qualityOfPoint, 5);
+  rb_define_singleton_method(Point, "qualityOfPointsImage", qualityOfPointsImage, 8);
+  rb_define_singleton_method(Point, "qualityOfPoint", qualityOfPoint, 5);
 
-  rb_define_singleton_method(Image, "buildImage", (ruby_method) buildImage, 3);
+  rb_define_singleton_method(Image, "buildImage", buildImage, 3);
 }
-
-} // extern "C"
