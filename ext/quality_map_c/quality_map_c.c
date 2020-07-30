@@ -140,7 +140,7 @@ static int memArrayToPngPointerWithFilter(VipsObject *scope, unsigned char *imag
   if(found_mem) {
     // Apply median rank filtering on holes
     if(!(ims[2] = vips_image_new_from_memory( found_mem, size * size, size, size, 1, VIPS_FORMAT_UCHAR )) ||
-      vips_median( ims[1], ims+3, 2, NULL ) ||
+      vips_median( ims[1], ims+3, 3, NULL ) ||
       vips_equal_const1( ims[2], ims+4, 1, NULL ) ||
       vips_ifthenelse( ims[4], ims[1], ims[3], ims+4, NULL ) )
         return -1;
