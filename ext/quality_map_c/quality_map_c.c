@@ -106,9 +106,9 @@ RubyPointArrayToCVectorArray(VALUE ary, long **poly, long *length, double multip
           rb_raise(rb_eArgError, "%s", earg);
         }
         (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 0)) * multiply_const;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 1)) * multiply_const*2;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord1, 1)) * multiply_const;
         (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 0)) * multiply_const;
-        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 1)) * multiply_const*2;
+        (*poly)[poly_ind++] = NUM2DBL(rb_ary_entry(coord2, 1)) * multiply_const;
       }
     }
   }
