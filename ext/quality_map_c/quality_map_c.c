@@ -11,9 +11,7 @@
 
 #define DEFAULT_MULTIPLY_CONST 1048576 // 2 ^ 19
 
-
 enum QualityCalcMethod {QualityLogExpSum = 0, QualityFirst = 1}; 
-
 
 const int ALPHA = 64;
 
@@ -204,6 +202,8 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
 
   unsigned long fixed_value;
 
+  int allBlank = 1;
+
   for(long point[2] = {0, lat_end}, image_pos = 0, found_pos = 0; point[1] >= lat_start; point[1]--) {
     for(point[0] = lng_start; point[0] <= lng_end; point[0]++, found_pos++, image_pos += 4) {
       switch(quality_calc_method) {
@@ -229,6 +229,9 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
           image_mem[image_pos+1] = (fixed_value >> 16) & 0xFF; // green
           image_mem[image_pos+2] = (fixed_value >> 8) & 0xFF; // blue
           image_mem[image_pos+3] = fixed_value & 0xFF; // alpha
+          if(fixed_value) {
+            allBlank = 0;
+          }
           break;
         }
         case QualityFirst:
@@ -248,6 +251,7 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
               image_mem[image_pos+2] = (fixed_value >> 8) & 0xFF; // blue
               image_mem[image_pos+3] = fixed_value & 0xFF; // alpha
               found_mem[found_pos] = 1;
+              allBlank = 0;
               break;
             }
           }
@@ -260,6 +264,10 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
           rb_raise(rb_eRuntimeError, "%s", "Unknown Calc Method Type Chosen");
       }
     }
+  }
+
+  if(allBlank) {
+    return Qnil;
   }
 
   size_t imageSize;
