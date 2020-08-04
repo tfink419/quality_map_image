@@ -129,7 +129,7 @@ long QualitiesOfPoint(long point[2], double *qualities, long **polygons_as_vecto
   return num_qualities;
 }
 
-static int memArrayToPngPointerWithFilter(VipsObject *scope, unsigned char *image_mem, unsigned char* found_mem, long size, void **pngPointer, int *imageSize) {
+static int MemArrayToPngPointerWithFilter(VipsObject *scope, unsigned char *image_mem, unsigned char* found_mem, long size, void **pngPointer, int *imageSize) {
   VipsImage **ims = (VipsImage **) vips_object_local_array( scope, 7 );
   if(!(ims[0] = vips_image_new_from_memory( image_mem, 4 * size * size, size, size, 4, VIPS_FORMAT_UCHAR)))
     return -1;
@@ -267,6 +267,22 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   }
 
   if(allBlank) {
+    free(image_mem);
+    switch(quality_calc_method) {
+      case QualityLogExpSum:
+        free(qualities);
+        break;
+      case QualityFirst:
+        free(found_mem);
+        break;
+      default:
+        break;
+    }
+    for(long i = 0; i < polygons_length; i++) {
+      free(polygons_as_vectors[i]);
+    }
+    free(polygons_as_vectors);
+    free(polygons_vectors_lengths);
     return Qnil;
   }
 
@@ -274,7 +290,7 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   void *pngPointer;
   VipsObject *scope;
   scope = VIPS_OBJECT( vips_image_new() );
-  if(memArrayToPngPointerWithFilter(scope, image_mem, found_mem, range, &pngPointer, &imageSize))
+  if(MemArrayToPngPointerWithFilter(scope, image_mem, found_mem, range, &pngPointer, &imageSize))
     vips_error_exit( NULL );
 
   VALUE ruby_blob = rb_str_new((char *)pngPointer, imageSize);
