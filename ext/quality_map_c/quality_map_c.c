@@ -385,7 +385,6 @@ static int LogExpSumImages(VipsObject *scope, VipsImage **images, long num_image
   zero_im = vips_image_new_from_image1( images[0], 0 );
   if(!zero_im)
     return -1;
-  printf("Num images: %d\n", num_images);
   for(long i = 0; i < num_images; i++) {
     // Add exp ^ pixel_value to each other
     // If pixel_value == 0, drop it to 0
