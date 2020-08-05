@@ -416,12 +416,12 @@ static int FixUpImage(VipsObject *scope, long size, VALUE images, VipsImage **ou
   VipsImage *temp_im1, *temp_im2, *temp_band;
   VipsImage **ims = (VipsImage **) vips_object_local_array( scope, 10 );
   if(num_images > 0) {
+    ratio = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*ratio;
     VipsImage **image_pieces = (VipsImage **) vips_object_local_array( scope, num_images );
     for(long i = 0; i < num_images; i++)
     {
       VipsImage **bands = (VipsImage **) vips_object_local_array( scope, 4 );
       // Scale ratio to range
-      ratio = (GRADIENT_MAP_SIZE-1.0)/(range_high-range_low)*ratio;
       if(vips_pngload_buffer (RSTRING_PTR(rb_ary_entry(images, i)),
                       RSTRING_LEN(rb_ary_entry(images, i)),
                       &temp_im1, NULL))
@@ -449,6 +449,7 @@ static int FixUpImage(VipsObject *scope, long size, VALUE images, VipsImage **ou
       g_object_unref(temp_im2);
       g_object_unref(temp_im1);
     }
+
     switch(quality_calc_method) {
       case QualityFirst:
         ims[0] = image_pieces[0];
@@ -466,7 +467,9 @@ static int FixUpImage(VipsObject *scope, long size, VALUE images, VipsImage **ou
     // e.g. [0,0].sum - 5 == -5 would become [0-5, 0-5].sum == -10
     if(vips_linear1 (ims[0], ims+1, 1, -range_low, NULL) )
       return -1;
-
+    char path[256];
+    sprintf(path, "vips-after-image%d.v", num);
+    vips_image_write_to_file(ims[1], path, NULL);
     // if(pix < 0) { pix = 0 }, if(pix > high-low) { px = high-low}
     if( !(ims[2] = vips_image_new_from_image1( ims[1], 0 )) ||
         !(ims[3] = vips_image_new_from_image1( ims[1], range_high-range_low )) ||
