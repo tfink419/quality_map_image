@@ -317,6 +317,8 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   return ruby_blob;
 }
 
+long num = 0;
+
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
   long point[2] = { NUM2DBL(lng)*DEFAULT_MULTIPLY_CONST, NUM2DBL(lat)*DEFAULT_MULTIPLY_CONST };
@@ -378,21 +380,35 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
 }
 
 static int LogExpSumImages(VipsObject *scope, VipsImage **images, long num_images, VipsImage **image, double exp) {
-  VipsImage **ims = (VipsImage **) vips_object_local_array( scope, num_images +2);
+  VipsImage **ims = (VipsImage **) vips_object_local_array( scope, num_images +6);
+  VipsImage *zero_im, *temp_im1, *temp_im2;
+  zero_im = vips_image_new_from_image1( images[0], 0 );
+  if(!zero_im)
+    return -1;
+  printf("Num images: %d\n", num_images);
   for(long i = 0; i < num_images; i++) {
     // Add exp ^ pixel_value to each other
-    if(vips_math2_const(images[i], ims+i, VIPS_OPERATION_MATH2_WOP, &exp, 1, NULL))
-      return -1;
+    // If pixel_value == 0, drop it to 0
+    if(vips_math2_const(images[i], &temp_im1, VIPS_OPERATION_MATH2_WOP, &exp, 1, NULL) ||
+      vips_equal(zero_im, images[i], &temp_im2, NULL) ||
+      vips_ifthenelse(temp_im2, zero_im, temp_im1, ims+i, NULL))
+        return -1;
+    g_object_unref(temp_im1);
+    g_object_unref(temp_im2);
   }
+  // take sum
+  // turn sum_value into 1 if == 0
   // take log_exp(sum)
-  if(vips_sum(ims, ims+num_images, num_images, NULL) ||
-    vips_log(ims[num_images], ims+num_images+1, NULL) ||
-    vips_linear1(ims[num_images+1], image, 1/log(exp), 0, NULL))
+  if(!(ims[num_images] = vips_image_new_from_image1( images[0], 1 )) ||
+    vips_sum(ims, ims+num_images+1, num_images, NULL) ||
+    vips_equal(zero_im, ims[num_images+1], ims+num_images+2, NULL) ||
+    vips_ifthenelse(ims[num_images+2], ims[num_images], ims[num_images+1], ims+num_images+3, NULL) ||
+    vips_log(ims[num_images+3], ims+num_images+4, NULL) ||
+    vips_linear1(ims[num_images+4], image, 1/log(exp), 0, NULL))
       return -1;
+  g_object_unref(zero_im);
   return 0;
 }
-
-long num = 0;
 
 static int FixUpImage(VipsObject *scope, long size, VALUE images, VipsImage **out, long range_low, long range_high, double ratio, double scale, int invert, enum QualityCalcMethod quality_calc_method, double quality_calc_value) {
   Check_Type(images, T_ARRAY);

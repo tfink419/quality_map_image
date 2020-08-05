@@ -79,6 +79,14 @@ RSpec.describe QualityMapImage do
     File.write("test_images/test_image4.png", test_response)
   end
 
+  it "builds an image with a blue-greenish square in the bottom left and a green squiggle in the top right" do
+    image_data = [[0, 40, 1, QUALITY_OF_POINTS_SQUARE_SCALE, false, 'LogExpSum', 2]]
+    images = [[File.read("test_images/test_image.png"), File.read("test_images/test_image2.png")]]
+    test_response = subject.colorized_quality_image(291, images, image_data)
+    expect(test_response).to be_truthy
+    File.write("test_images/test_image8.png", test_response)
+  end
+
   it "builds an image with a blue square in the bottom left and a red squiggle in the top right" do
     images = []
     image_data = [[0, 10, 0.1, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true, 'LogExpSum', 2], [0, 10, 0.9, QUALITY_OF_POINTS_SQUARE_SCALE, false, 'First', 1]]
