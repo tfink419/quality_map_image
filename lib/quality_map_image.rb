@@ -18,6 +18,10 @@ module QualityMapImage
   )
 
   def self.colorized_quality_image(size, images, image_data)
+    image_data = image_data.map do |inner_data|
+      inner_data[5] = METHOD_MAP[inner_data[5]]
+      inner_data
+    end
     QualityMapC::Image.buildImage(size, images, image_data)
   end
 

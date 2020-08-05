@@ -61,9 +61,9 @@ RSpec.describe QualityMapImage do
 
   it "builds an image with a greenish square in the bottom left and a red squigle in the top right" do
     images = []
-    image_data = [[0, 10, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 10, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
-    images << File.read("test_images/test_image.png")
-    images << File.read("test_images/test_image2.png")
+    image_data = [[0, 10, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true, 'LogExpSum', 2], [0, 10, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false, 'First', 1]]
+    images << [File.read("test_images/test_image.png")]
+    images << [File.read("test_images/test_image2.png")]
     test_response = subject.colorized_quality_image(291, images, image_data)
     expect(test_response).to be_truthy
     File.write("test_images/test_image3.png", test_response)
@@ -71,9 +71,9 @@ RSpec.describe QualityMapImage do
 
   it "builds an image with a faded greenish square in the bottom left and a red-yellow squiggle in the top right" do
     images = []
-    image_data = [[0, 40, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 40, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
-    images << File.read("test_images/test_image.png")
-    images << File.read("test_images/test_image2.png")
+    image_data = [[0, 40, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true, 'LogExpSum', 2], [0, 40, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false, 'First', 1]]
+    images << [File.read("test_images/test_image.png")]
+    images << [File.read("test_images/test_image2.png")]
     test_response = subject.colorized_quality_image(291, images, image_data)
     expect(test_response).to be_truthy
     File.write("test_images/test_image4.png", test_response)
@@ -81,17 +81,17 @@ RSpec.describe QualityMapImage do
 
   it "builds an image with a blue square in the bottom left and a red squiggle in the top right" do
     images = []
-    image_data = [[0, 10, 0.1, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 10, 0.9, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
-    images << File.read("test_images/test_image.png")
-    images << File.read("test_images/test_image2.png")
+    image_data = [[0, 10, 0.1, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true, 'LogExpSum', 2], [0, 10, 0.9, QUALITY_OF_POINTS_SQUARE_SCALE, false, 'First', 1]]
+    images << [File.read("test_images/test_image.png")]
+    images << [File.read("test_images/test_image2.png")]
     test_response = subject.colorized_quality_image(291, images, image_data)
     expect(test_response).to be_truthy
     File.write("test_images/test_image5.png", test_response)
   end
 
   it "builds a yellow image" do
-    image_data = [[0, 40, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true], [0, 40, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false]]
-    test_response = subject.colorized_quality_image(291, [nil, nil], image_data)
+    image_data = [[0, 40, 0.5, QUALITY_OF_POINTS_CENSUS_TRACT_SCALE, true, 'LogExpSum', 2], [0, 40, 0.5, QUALITY_OF_POINTS_SQUARE_SCALE, false, 'First', 1]]
+    test_response = subject.colorized_quality_image(291, [[], []], image_data)
     expect(test_response).to be_truthy
     File.write("test_images/test_image6.png", test_response)
   end
