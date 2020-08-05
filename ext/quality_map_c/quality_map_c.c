@@ -317,8 +317,6 @@ static VALUE qualityOfPointsImage(VALUE self,  VALUE multiply_const_ruby, VALUE 
   return ruby_blob;
 }
 
-long num = 0;
-
 static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VALUE quality_calc_method_ruby, VALUE quality_calc_value_ruby) {
   // X is lng, Y is lat
   long point[2] = { NUM2DBL(lng)*DEFAULT_MULTIPLY_CONST, NUM2DBL(lat)*DEFAULT_MULTIPLY_CONST };
@@ -467,9 +465,6 @@ static int FixUpImage(VipsObject *scope, long size, VALUE images, VipsImage **ou
     // e.g. [0,0].sum - 5 == -5 would become [0-5, 0-5].sum == -10
     if(vips_linear1 (ims[0], ims+1, 1, -range_low, NULL) )
       return -1;
-    char path[256];
-    sprintf(path, "vips-after-image%d.v", num);
-    vips_image_write_to_file(ims[1], path, NULL);
     // if(pix < 0) { pix = 0 }, if(pix > high-low) { px = high-low}
     if( !(ims[2] = vips_image_new_from_image1( ims[1], 0 )) ||
         !(ims[3] = vips_image_new_from_image1( ims[1], range_high-range_low )) ||
