@@ -131,10 +131,9 @@ long QualitiesOfPoint(long point[2], double *qualities, long **polygons_as_vecto
 
 static int MemArrayToPngPointerWithFilter(VipsObject *scope, unsigned char *image_mem, unsigned char* found_mem, long size, void **pngPointer, int *imageSize) {
   VipsImage **ims = (VipsImage **) vips_object_local_array( scope, 7 );
-  if(!(ims[0] = vips_image_new_from_memory( image_mem, 4 * size * size, size, size, 4, VIPS_FORMAT_UCHAR)))
-    return -1;
-  if(vips_copy(ims[0], ims+1, "bands", 1, "format", VIPS_FORMAT_UINT, NULL))
-    return -1;
+  if(!(ims[0] = vips_image_new_from_memory( image_mem, 4 * size * size, size, size, 4, VIPS_FORMAT_UCHAR)) ||
+    vips_copy(ims[0], ims+1, "bands", 1, "format", VIPS_FORMAT_UINT, NULL))
+      return -1;
   if(found_mem) {
     // Apply median rank filtering on holes
     if(!(ims[2] = vips_image_new_from_memory( found_mem, size * size, size, size, 1, VIPS_FORMAT_UCHAR )) ||
@@ -147,11 +146,10 @@ static int MemArrayToPngPointerWithFilter(VipsObject *scope, unsigned char *imag
     ims[4] = ims[1];
     ims[1] = NULL;
   }
-  if(vips_copy(ims[4], ims+5, "bands", 4, "format", VIPS_FORMAT_UCHAR, NULL))
-    return -1;
 
-  if( vips_pngsave_buffer(ims[5], pngPointer, imageSize, "compression", 9, NULL) )
-    return -1;
+  if(vips_copy(ims[4], ims+5, "bands", 4, "format", VIPS_FORMAT_UCHAR, NULL) ||
+    vips_pngsave_buffer(ims[5], pngPointer, imageSize, "compression", 9, NULL) )
+      return -1;
 
   return 0;
 }
@@ -378,32 +376,29 @@ static VALUE qualityOfPoint(VALUE self, VALUE lat, VALUE lng, VALUE polygons, VA
 }
 
 static int LogExpSumImages(VipsObject *scope, VipsImage **images, long num_images, VipsImage **image, double exp) {
-  VipsImage **ims = (VipsImage **) vips_object_local_array( scope, num_images +6);
-  VipsImage *zero_im, *temp_im1, *temp_im2;
+  VipsImage **ims = (VipsImage **) vips_object_local_array( scope, num_images +5);
+  VipsImage *zero_im, *temp_im;
   zero_im = vips_image_new_from_image1( images[0], 0 );
   if(!zero_im)
     return -1;
   for(long i = 0; i < num_images; i++) {
     // Add exp ^ pixel_value to each other
     // If pixel_value == 0, drop it to 0
-    if(vips_math2_const(images[i], &temp_im1, VIPS_OPERATION_MATH2_WOP, &exp, 1, NULL) ||
-      vips_equal(zero_im, images[i], &temp_im2, NULL) ||
-      vips_ifthenelse(temp_im2, zero_im, temp_im1, ims+i, NULL))
+    if(vips_math2_const(images[i], &temp_im, VIPS_OPERATION_MATH2_WOP, &exp, 1, NULL) ||
+      vips_ifthenelse(images[i], temp_im, zero_im, ims+i, NULL))
         return -1;
-    g_object_unref(temp_im1);
-    g_object_unref(temp_im2);
+    g_object_unref(temp_im);
   }
+  g_object_unref(zero_im);
   // take sum
   // turn sum_value into 1 if == 0
   // take log_exp(sum)
   if(!(ims[num_images] = vips_image_new_from_image1( images[0], 1 )) ||
     vips_sum(ims, ims+num_images+1, num_images, NULL) ||
-    vips_equal(zero_im, ims[num_images+1], ims+num_images+2, NULL) ||
-    vips_ifthenelse(ims[num_images+2], ims[num_images], ims[num_images+1], ims+num_images+3, NULL) ||
-    vips_log(ims[num_images+3], ims+num_images+4, NULL) ||
-    vips_linear1(ims[num_images+4], image, 1/log(exp), 0, NULL))
+    vips_ifthenelse(ims[num_images+1], ims[num_images+1], ims[num_images], ims+num_images+2, NULL) ||
+    vips_log(ims[num_images+2], ims+num_images+3, NULL) ||
+    vips_linear1(ims[num_images+3], image, 1/log(exp), 0, NULL))
       return -1;
-  g_object_unref(zero_im);
   return 0;
 }
 
