@@ -69,7 +69,7 @@ module QualityMapImage
   end
 
   # 
-  def self.subsample4(size, top_left, top_right, bottom_left, bottom_right)
+  def self.shrink4(size, top_left, top_right, bottom_left, bottom_right)
     arr = [top_left, top_right, bottom_left, bottom_right]
     return nil if !arr.any?
     v_top_left, v_top_right, v_bottom_left, v_bottom_right =
@@ -84,6 +84,7 @@ module QualityMapImage
     bottom = v_bottom_left.merge(v_bottom_right, :horizontal, -size, 0)
     top.
       merge(bottom, :vertical, 0, -size).
+      rank(2, 2, 3).
       subsample(2, 2).
       pngsave_buffer(compression: 9, strip: true)
   end
