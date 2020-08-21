@@ -82,10 +82,10 @@ module QualityMapImage
     end
     top = v_top_left.merge(v_top_right, :horizontal, -size, 0)
     bottom = v_bottom_left.merge(v_bottom_right, :horizontal, -size, 0)
-    top.
-      merge(bottom, :vertical, 0, -size).
+    split_into_bands(bandjoin(top.
+      merge(bottom, :vertical, 0, -size)).
       rank(2, 2, 3).
-      subsample(2, 2).
+      subsample(2, 2)).
       pngsave_buffer(compression: 9, strip: true)
   end
 

@@ -109,7 +109,7 @@ RSpec.describe QualityMapImage do
     top_right = File.read("test_images/test_image4.png")
     bottom_left = File.read("test_images/test_image5.png")
     bottom_right = File.read("test_images/test_image6.png")
-    test_response = subject.subsample4(291, top_left, top_right, bottom_left, bottom_right)
+    test_response = subject.shrink4(291, top_left, top_right, bottom_left, bottom_right)
     expect(test_response).to be_truthy
     File.write("test_images/test_image7.png", test_response)
   end
