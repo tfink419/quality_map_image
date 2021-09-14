@@ -1,4 +1,4 @@
-require_relative 'lib/quality_map_image/version'
+require './lib/quality_map_image/version'
 
 Gem::Specification.new do |s|
   s.name = %q{quality_map_image}
