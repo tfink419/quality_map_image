@@ -613,10 +613,10 @@ static VALUE buildImage(VALUE self, VALUE size_ruby, VALUE images, VALUE image_d
 }
 
 
-void Init_quality_map_c(void) {
-  VALUE QualityMapC = rb_define_module("QualityMapC");
-  VALUE Image = rb_define_class_under(QualityMapC, "Image", rb_cObject);
-  VALUE Point = rb_define_class_under(QualityMapC, "Point", rb_cObject);
+void Init_quality_map_image(void) {
+  VALUE QualityMapImage = rb_define_module("QualityMapImage");
+  VALUE Image = rb_define_class_under(QualityMapImage, "Image", rb_cObject);
+  VALUE Point = rb_define_class_under(QualityMapImage, "Point", rb_cObject);
 
   rb_define_singleton_method(Point, "qualityOfPointsImage", qualityOfPointsImage, 8);
   rb_define_singleton_method(Point, "qualityOfPoint", qualityOfPoint, 5);

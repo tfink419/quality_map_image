@@ -22,7 +22,7 @@ task :build_gradient_map do
   output += "\nconst int GRADIENT_MAP_SIZE = GRADIENT_MAP_SIZE_PRE/GRADIENT_MAP_CHANNELS;"
   output += "\nconst unsigned char GRADIENT_MAP[GRADIENT_MAP_SIZE_PRE] = {"+colors.map{ |color| color.join(",")}.join(",")+"};"
 
-  open('ext/quality_map_c/gradient.c', 'w') { |f|
+  open('ext/quality_map_image/gradient.c', 'w') { |f|
     f.puts output
   }
 end
