@@ -8,3 +8,4 @@ gem "rake", "~> 12.0"
 gem 'gradient', '~> 0.5.1'
 
 gem 'ruby-vips'
+gem "rspec", "~> 3.11"
