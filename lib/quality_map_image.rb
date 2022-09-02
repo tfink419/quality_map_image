@@ -1,5 +1,5 @@
-require "quality_map_c/quality_map_c"
 require "quality_map_image/version"
+require "quality_map_image/quality_map_image"
 require 'gradient'
 require 'ruby-vips'
 
@@ -22,15 +22,15 @@ module QualityMapImage
       inner_data[5] = METHOD_MAP[inner_data[5]]
       inner_data
     end
-    QualityMapC::Image.buildImage(size, images, image_data)
+    QualityMapImage::Image.buildImage(size, images, image_data)
   end
 
   def self.quality_of_points_image(multiply_const, lat, lng, range, polygons, quality_scale, quality_calc_method, quality_calc_value)
-    QualityMapC::Point.qualityOfPointsImage(multiply_const, lat, lng, range, polygons, quality_scale, METHOD_MAP[quality_calc_method], quality_calc_value)
+    QualityMapImage::Point.qualityOfPointsImage(multiply_const, lat, lng, range, polygons, quality_scale, METHOD_MAP[quality_calc_method], quality_calc_value)
   end
 
   def self.quality_of_point(lat, lng, polygons, quality_calc_method, quality_calc_value)
-    QualityMapC::Point.qualityOfPoint(lat, lng, polygons, METHOD_MAP[quality_calc_method], quality_calc_value)
+    QualityMapImage::Point.qualityOfPoint(lat, lng, polygons, METHOD_MAP[quality_calc_method], quality_calc_value)
   end
 
   def self.colorized_quality_image_ruby(size, images, image_data)

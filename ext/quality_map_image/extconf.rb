@@ -1,5 +1,13 @@
 require 'mkmf'
 
+abort 'Missing Glib Package.' unless pkg_config("glib-2.0")
+abort 'Missing Glib Object Package.' unless pkg_config("gobject-2.0")
+abort 'Missing VIPS Package' unless pkg_config("vips")
+abort 'Missing PNG library.' unless pkg_config("libpng") || have_library('png16')
+abort 'Missing Z library.' unless have_library('z')
+
+puts ENV
+
 LIBDIR      = RbConfig::CONFIG['libdir']
 INCLUDEDIR  = RbConfig::CONFIG['includedir']
 
@@ -21,9 +29,6 @@ LIB_DIRS = [
   # Then search /usr/local for people that installed from source
   '/usr/local/lib',
 
-  # Homebrew location in Apple Silicon
-  '/opt/homebrew/lib',
-
   # Check the ruby install locations
   LIBDIR,
 
@@ -34,14 +39,6 @@ LIB_DIRS = [
   '/usr/lib',
 ]
 
-dir_config('quality_map_c', HEADER_DIRS, LIB_DIRS) # Tried with the line commented out, doesn't make any difference
+dir_config('quality_map_image', HEADER_DIRS, LIB_DIRS) # Tried with the line commented out, doesn't make any difference
 
-abort 'Missing Glib Package.' unless pkg_config("glib-2.0")
-abort 'Missing Glib Object Package.' unless pkg_config("gobject-2.0")
-abort 'Missing VIPS Package' unless pkg_config("vips")
-abort 'Missing PNG library.' unless have_library('png16')
-abort 'Missing Z library.' unless have_library('z')
-
-puts ENV
-
-create_makefile 'quality_map_c/quality_map_c'
+create_makefile 'quality_map_image/quality_map_image'
