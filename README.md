@@ -1,20 +1,18 @@
 # Quality Map Image Builder Ruby C Extension
 
 ## About
-This gem is a C extension to build the quality map images required for myQOLi
+This gem is a C extension to build the quality map images required for [Pitamap](https://www.pitamap.com)
 
 ## Why
-Ruby was too slow for the dynamic image creation needed for myQOLi
+Ruby was too slow for the dynamic image creation needed for [Pitamap](https://www.pitamap.com)
 
 ## Installation
 
 Add this line to your application's Gemfile:
 
 ```ruby
-gem 'quality_map_image', git: "https://#{ENV['GITHUB_TOKEN']}:x-oauth-basic@github.com/tfink419/quality_map_image.git"
+gem 'quality_map_image', git: 'https://github.com/tfink419/quality_map_image.git'
 ```
-
-Get an Oauth Token through your account settings.
 
 And then execute:
 
@@ -24,6 +22,7 @@ Or install it yourself as:
 
     $ gem install quality_map_image
 
+If this doesn't compile locally you will need to run the code through docker or figure out how to expose the libvips C libraries locally
 ## Usage
 
 TODO: Write usage instructions here
